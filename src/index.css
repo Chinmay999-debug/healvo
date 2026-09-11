@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* Healvo brand */
+  --color-ink: #0f223a;
+  --color-teal: #0ea5b7;
+  --color-teal-bright: #2dd4bf;
+  --color-gradient-start: #2dd4bf;
+  --color-gradient-end: #0891b2;
+  --color-surface-dark: #0d1b2a;
+
+  /* Neutral scale used for backgrounds, borders, muted text */
+  --color-canvas: #f6f8fa;
+  --color-surface: #ffffff;
+  --color-border: #e6e9ee;
+  --color-border-strong: #d8dde4;
+  --color-muted: #6b7684;
+  --color-muted-soft: #97a1ad;
+
+  /* Status accents */
+  --color-mint-bg: #e6f7f1;
+  --color-mint-bg-hover: #dbf1e8;
+  --color-mint-text: #0f8a5f;
+  --color-blue-bg: #eaf1fd;
+  --color-blue-text: #2563eb;
+  --color-amber-bg: #fdf1e7;
+  --color-amber-text: #c2660c;
+  --color-slate-bg: #eef1f4;
+  --color-slate-text: #5b6472;
+
+  /* Destructive/danger — reserved for irreversible actions (delete, etc).
+   * Kept distinct from amber, which means attention/pending/in-progress
+   * everywhere else in the app, never "this cannot be undone." */
+  --color-danger-bg: #fbeae9;
+  --color-danger-text: #c0362c;
+
+  /* Solid "brand ink" surface — the dark navy fill used for primary
+   * buttons, active/selected pills, chat bubbles and modal-overlay scrims.
+   * Deliberately separate from --color-ink (which is *text* and flips to a
+   * light color in dark mode): these surfaces need their own identity so a
+   * primary button doesn't invert into a pale block when the theme flips.
+   * In light mode these match the app's original hardcoded values exactly. */
+  --color-ink-solid: #0f223a;
+  --color-ink-solid-hover: #182f4d;
+  --color-ink-solid-text: #ffffff;
+
+  /* Modal/drawer backdrop scrim. Baked-in alpha (not a Tailwind /40
+   * opacity modifier) so it can be a true dark scrim in both themes
+   * without depending on --color-ink's theme-flipped value. */
+  --color-overlay: rgba(15, 34, 58, 0.4);
+
+  /* One step above --color-surface — modals, dropdowns, popovers and
+   * tooltips that need to visually float above page-level cards. Equal to
+   * --color-surface in light mode (today's design has no such distinction
+   * yet), diverges only in dark mode to give floating UI proper elevation. */
+  --color-surface-raised: #ffffff;
+
+  /* The Toggle switch's knob — always a light, neutral disc regardless of
+   * theme so it stays legible against both its teal (on) and canvas (off)
+   * track colors. */
+  --color-toggle-knob: #ffffff;
+}
+
+:root {
+  color-scheme: light;
+}
+
+/* Dark theme — a purpose-built dark palette (not an inversion of the light
+ * tokens above). Same navy/teal brand family, re-tuned for a dark canvas:
+ * dark app background, a lighter "surface" layer for cards, an even
+ * lighter "surface-raised" layer for floating UI, and brighter accent
+ * tints so status colors and links keep strong contrast. Every component
+ * already reads these as CSS custom properties, so this block is the
+ * entire dark theme — no component-level dark-mode conditionals needed. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-ink: #e9eef4;
+  /* --color-teal deliberately NOT overridden — it's used both as a solid
+   * fill (paired with white text, e.g. selected pills, the AI trigger)
+   * and as text/icon color. #0ea5b7 already has ~5.9:1 contrast as text
+   * against the dark surface below, and keeping it identical to light
+   * mode preserves the white-text-on-teal contrast those solid fills
+   * already ship with today — brightening it would break that pairing. */
+  --color-teal-bright: #5eead4;
+
+  --color-canvas: #0a1220;
+  --color-surface: #101b29;
+  --color-surface-raised: #17273b;
+  --color-border: #223148;
+  --color-border-strong: #33455e;
+  --color-muted: #9aa8ba;
+  --color-muted-soft: #6c7c90;
+
+  --color-mint-bg: #0f2e22;
+  --color-mint-bg-hover: #154533;
+  --color-mint-text: #34d399;
+  --color-blue-bg: #14243f;
+  --color-blue-text: #60a5fa;
+  --color-amber-bg: #3a2712;
+  --color-amber-text: #fbbf24;
+  --color-slate-bg: #1c2836;
+  --color-slate-text: #aab5c4;
+  --color-danger-bg: #3a1613;
+  --color-danger-text: #f87171;
+
+  --color-ink-solid: #2dd4bf;
+  --color-ink-solid-hover: #22b8a6;
+  --color-ink-solid-text: #072019;
+
+  --color-overlay: rgba(2, 6, 12, 0.65);
+  --color-toggle-knob: #eef2f6;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Healvo AI — one-shot entrance for the chat panel. Deliberately not a
+ * loop: the panel should feel alive once, not distracting. */
+@keyframes healvo-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.healvo-panel-in {
+  animation: healvo-panel-in 220ms ease-out;
+}
+
+/* Onboarding — a one-shot fade/slide when a step mounts, so moving between
+ * steps reads as a deliberate transition rather than an abrupt swap. Not a
+ * loop, matching healvo-panel-in's restraint above. */
+@keyframes onboarding-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .healvo-panel-in {
+    animation: none;
+  }
+
+  [class*="animate-[onboarding-step-in"] {
+    animation: none;
+  }
+}
