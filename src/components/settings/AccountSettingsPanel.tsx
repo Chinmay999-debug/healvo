@@ -1,14 +1,20 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { Avatar } from "../ui/Avatar";
 import { PhoneInput } from "../ui/PhoneInput";
 import { inputClass } from "../ui/fieldStyles";
 import { SegmentedControl } from "../patient-record/SegmentedControl";
+import { MediaCropModal } from "./MediaCropModal";
 import { useClinicData } from "../../state/clinicData";
 import { useAuth } from "../../state/authContext";
 import { useTheme, type ThemePreference } from "../../state/themeContext";
 import { initials as toInitials, cn, getErrorMessage } from "../../lib/utils";
 import { normalizePhone, isValidIndianMobile } from "../../lib/phone";
+import { useSignedMediaUrl } from "../../lib/signedMedia";
+import { validateImageFile, ACCEPTED_IMAGE_ACCEPT } from "../../lib/imageCrop";
+
+const AVATAR_BUCKET = "avatars";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "light", label: "Light" },
@@ -22,7 +28,7 @@ function localDigits(phone: string) {
 }
 
 export function AccountSettingsPanel() {
-  const { doctorProfile, updateDoctorProfile } = useClinicData();
+  const { doctorProfile, updateDoctorProfile, uploadAvatarPhoto, removeAvatarPhoto } = useClinicData();
   const { signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const [draft, setDraft] = useState({
@@ -33,6 +39,12 @@ export function AccountSettingsPanel() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const avatarPhotoUrl = useSignedMediaUrl(AVATAR_BUCKET, doctorProfile.avatarPath);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [removingAvatar, setRemovingAvatar] = useState(false);
 
   const canSave = draft.name.trim().length > 0 && isValidIndianMobile(draft.phoneLocal);
 
@@ -55,6 +67,40 @@ export function AccountSettingsPanel() {
     }
   }
 
+  function handleAvatarFileSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const error = validateImageFile(file);
+    if (error) {
+      setAvatarError(error);
+      return;
+    }
+    setAvatarError(null);
+    setPendingAvatarFile(file);
+  }
+
+  async function handleAvatarCropSave(blob: Blob) {
+    try {
+      await uploadAvatarPhoto(blob);
+      setPendingAvatarFile(null);
+    } catch (err) {
+      setAvatarError(getErrorMessage(err, "Could not save your photo. The previous one is unchanged."));
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    setRemovingAvatar(true);
+    setAvatarError(null);
+    try {
+      await removeAvatarPhoto();
+    } catch (err) {
+      setAvatarError(getErrorMessage(err, "Could not remove your photo."));
+    } finally {
+      setRemovingAvatar(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Card className="p-5">
@@ -64,23 +110,50 @@ export function AccountSettingsPanel() {
         </p>
 
         <div className="mt-5 flex items-center gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-mint-bg)] text-[20px] font-bold text-[var(--color-teal)]">
-            {toInitials(draft.name) || "?"}
-          </div>
+          <Avatar
+            initials={toInitials(draft.name) || "?"}
+            photoUrl={avatarPhotoUrl}
+            size={64}
+            className="text-[20px]"
+          />
           <div>
             <div className="text-[13px] font-semibold text-[var(--color-ink)]">
               Profile photo
             </div>
+            <input
+              ref={avatarFileInputRef}
+              type="file"
+              accept={ACCEPTED_IMAGE_ACCEPT}
+              className="hidden"
+              onChange={handleAvatarFileSelected}
+            />
             <div className="mt-1.5 flex items-center gap-2">
-              <Button variant="outline" type="button">
-                Change photo
+              <Button variant="outline" type="button" onClick={() => avatarFileInputRef.current?.click()}>
+                {doctorProfile.avatarPath ? "Replace photo" : "Add photo"}
               </Button>
-              <span className="text-[12px] text-[var(--color-muted-soft)]">
-                PNG or JPG, up to 2MB
-              </span>
+              {doctorProfile.avatarPath && (
+                <Button variant="ghost" type="button" onClick={() => void handleRemoveAvatar()} disabled={removingAvatar}>
+                  {removingAvatar ? "Removing…" : "Remove"}
+                </Button>
+              )}
+              {!doctorProfile.avatarPath && (
+                <span className="text-[12px] text-[var(--color-muted-soft)]">JPG, PNG, or WEBP</span>
+              )}
             </div>
+            {avatarError && (
+              <p className="mt-1.5 text-[12px] font-semibold text-[var(--color-danger-text)]">{avatarError}</p>
+            )}
           </div>
         </div>
+
+        <MediaCropModal
+          open={pendingAvatarFile !== null}
+          file={pendingAvatarFile}
+          shape="circle"
+          title="Adjust your photo"
+          onCancel={() => setPendingAvatarFile(null)}
+          onSave={handleAvatarCropSave}
+        />
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Field label="Full name" required className="sm:col-span-2">

@@ -14,10 +14,14 @@ import {
 } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import { Logo } from "../ui/Logo";
+import { Avatar } from "../ui/Avatar";
 import { ClinicSelector } from "./ClinicSelector";
 import { cn, initials } from "../../lib/utils";
 import { useAuth } from "../../state/authContext";
 import { useClinicData } from "../../state/clinicData";
+import { useSignedMediaUrl } from "../../lib/signedMedia";
+
+const AVATAR_BUCKET = "avatars";
 
 const navItems = [
   { to: "/overview", label: "Overview", icon: LayoutGrid },
@@ -48,6 +52,7 @@ export function Sidebar({
   const { doctorProfile } = useClinicData();
   const displayName = doctorProfile.name || "Your account";
   const displayInitials = initials(displayName) || "?";
+  const avatarPhotoUrl = useSignedMediaUrl(AVATAR_BUCKET, doctorProfile.avatarPath);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
@@ -148,9 +153,7 @@ export function Sidebar({
               collapsed && "flex-none justify-center",
             )}
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-mint-bg)] text-[12px] font-bold text-[var(--color-teal)]">
-              {displayInitials}
-            </div>
+            <Avatar initials={displayInitials} photoUrl={avatarPhotoUrl} size={32} className="text-[12px]" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] font-bold text-[var(--color-ink)]">

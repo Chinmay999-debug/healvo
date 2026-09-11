@@ -32,6 +32,9 @@ export interface DoctorProfile {
   email: string;
   phone: string;
   title: string;
+  /** Path into the private "avatars" Storage bucket, or null for no photo
+   * (renders as initials — see components/ui/Avatar.tsx). */
+  avatarPath: string | null;
 }
 
 // Healvo supports exactly two staff roles. Access is role-based and
@@ -94,6 +97,9 @@ export interface ClinicSettings {
   appointmentDuration: number;
   onlineBookingEnabled: boolean;
   breaks: BreakPeriod[];
+  /** Path into the private "clinic-logos" Storage bucket, or null for no
+   * logo (renders as a clinic-initials badge). */
+  logoPath: string | null;
 }
 
 

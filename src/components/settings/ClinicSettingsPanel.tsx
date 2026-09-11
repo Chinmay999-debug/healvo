@@ -1,11 +1,17 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { Avatar } from "../ui/Avatar";
 import { PhoneInput } from "../ui/PhoneInput";
 import { inputClass } from "../ui/fieldStyles";
+import { MediaCropModal } from "./MediaCropModal";
 import { useClinicData } from "../../state/clinicData";
 import { initials as toInitials, cn, getErrorMessage } from "../../lib/utils";
 import { normalizePhone, isValidIndianMobile } from "../../lib/phone";
+import { useSignedMediaUrl } from "../../lib/signedMedia";
+import { validateImageFile, ACCEPTED_IMAGE_ACCEPT } from "../../lib/imageCrop";
+
+const CLINIC_LOGO_BUCKET = "clinic-logos";
 
 function localDigits(phone: string) {
   const digits = phone.replace(/\D/g, "");
@@ -13,7 +19,7 @@ function localDigits(phone: string) {
 }
 
 export function ClinicSettingsPanel() {
-  const { clinicSettings, updateClinicSettings } = useClinicData();
+  const { clinicSettings, updateClinicSettings, uploadClinicLogo, removeClinicLogo } = useClinicData();
   const [draft, setDraft] = useState({
     clinicName: clinicSettings.clinicName,
     phoneLocal: localDigits(clinicSettings.phone),
@@ -24,6 +30,12 @@ export function ClinicSettingsPanel() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const logoUrl = useSignedMediaUrl(CLINIC_LOGO_BUCKET, clinicSettings.logoPath);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [removingLogo, setRemovingLogo] = useState(false);
 
   const canSave = draft.clinicName.trim().length > 0 && isValidIndianMobile(draft.phoneLocal);
 
@@ -48,6 +60,40 @@ export function ClinicSettingsPanel() {
     }
   }
 
+  function handleLogoFileSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const error = validateImageFile(file);
+    if (error) {
+      setLogoError(error);
+      return;
+    }
+    setLogoError(null);
+    setPendingLogoFile(file);
+  }
+
+  async function handleLogoCropSave(blob: Blob) {
+    try {
+      await uploadClinicLogo(blob);
+      setPendingLogoFile(null);
+    } catch (err) {
+      setLogoError(getErrorMessage(err, "Could not save the logo. The previous one is unchanged."));
+    }
+  }
+
+  async function handleRemoveLogo() {
+    setRemovingLogo(true);
+    setLogoError(null);
+    try {
+      await removeClinicLogo();
+    } catch (err) {
+      setLogoError(getErrorMessage(err, "Could not remove the logo."));
+    } finally {
+      setRemovingLogo(false);
+    }
+  }
+
   return (
     <Card className="p-5">
       <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Clinic</h2>
@@ -56,21 +102,49 @@ export function ClinicSettingsPanel() {
       </p>
 
       <div className="mt-5 flex items-center gap-4">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-mint-bg)] text-[20px] font-bold text-[var(--color-teal)]">
-          {toInitials(draft.clinicName) || "?"}
-        </div>
+        <Avatar
+          initials={toInitials(draft.clinicName) || "?"}
+          photoUrl={logoUrl}
+          shape="rounded"
+          size={64}
+          className="text-[20px]"
+        />
         <div>
           <div className="text-[13px] font-semibold text-[var(--color-ink)]">Clinic logo</div>
+          <input
+            ref={logoFileInputRef}
+            type="file"
+            accept={ACCEPTED_IMAGE_ACCEPT}
+            className="hidden"
+            onChange={handleLogoFileSelected}
+          />
           <div className="mt-1.5 flex items-center gap-2">
-            <Button variant="outline" type="button">
-              Change logo
+            <Button variant="outline" type="button" onClick={() => logoFileInputRef.current?.click()}>
+              {clinicSettings.logoPath ? "Replace logo" : "Add logo"}
             </Button>
-            <span className="text-[12px] text-[var(--color-muted-soft)]">
-              PNG or JPG, up to 2MB
-            </span>
+            {clinicSettings.logoPath && (
+              <Button variant="ghost" type="button" onClick={() => void handleRemoveLogo()} disabled={removingLogo}>
+                {removingLogo ? "Removing…" : "Remove"}
+              </Button>
+            )}
+            {!clinicSettings.logoPath && (
+              <span className="text-[12px] text-[var(--color-muted-soft)]">JPG, PNG, or WEBP</span>
+            )}
           </div>
+          {logoError && (
+            <p className="mt-1.5 text-[12px] font-semibold text-[var(--color-danger-text)]">{logoError}</p>
+          )}
         </div>
       </div>
+
+      <MediaCropModal
+        open={pendingLogoFile !== null}
+        file={pendingLogoFile}
+        shape="rounded"
+        title="Adjust your logo"
+        onCancel={() => setPendingLogoFile(null)}
+        onSave={handleLogoCropSave}
+      />
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <Field label="Clinic name" required className="sm:col-span-2">

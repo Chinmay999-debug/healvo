@@ -1,8 +1,12 @@
 import { ChevronDown } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Avatar } from "../ui/Avatar";
 import { useAuth } from "../../state/authContext";
 import { useClinicData } from "../../state/clinicData";
 import { cn, initials } from "../../lib/utils";
+import { useSignedMediaUrl } from "../../lib/signedMedia";
+
+const CLINIC_LOGO_BUCKET = "clinic-logos";
 
 export function ClinicSelector({
   collapsed,
@@ -17,6 +21,7 @@ export function ClinicSelector({
   const clinicName = activeClinic?.name || "Your clinic";
   const location = [clinicSettings.address, clinicSettings.city].filter(Boolean).join(", ");
   const clinicInitial = initials(clinicName)[0] || "?";
+  const logoUrl = useSignedMediaUrl(CLINIC_LOGO_BUCKET, clinicSettings.logoPath);
 
   return (
     <Link
@@ -27,9 +32,7 @@ export function ClinicSelector({
         collapsed && "justify-center px-2",
       )}
     >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-mint-bg)] text-[13px] font-bold text-[var(--color-teal)]">
-        {clinicInitial}
-      </div>
+      <Avatar initials={clinicInitial} photoUrl={logoUrl} shape="rounded" size={32} className="text-[13px]" />
       {!collapsed && (
         <>
           <div className="min-w-0 flex-1">

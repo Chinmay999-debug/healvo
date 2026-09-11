@@ -23,6 +23,7 @@ export interface Profile {
   full_name: string;
   phone: string | null;
   title: string | null;
+  avatar_path: string | null;
 }
 
 export interface ClinicSummary {
@@ -49,7 +50,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, phone, title")
+    .select("id, full_name, phone, title, avatar_path")
     .eq("id", user.id)
     .maybeSingle();
   if (error) throw error;
@@ -140,9 +141,76 @@ export async function updateProfile(patch: ProfilePatchInput): Promise<Profile> 
     .from("profiles")
     .update(update)
     .eq("id", user.id)
-    .select("id, full_name, phone, title")
+    .select("id, full_name, phone, title, avatar_path")
     .single();
   if (error) throw error;
+  return data;
+}
+
+// Profile photo -----------------------------------------------------------------
+// Private "avatars" bucket, path {user_id}/{uuid}.jpg (see
+// 20260912120000_profile_avatar_clinic_logo.sql). Immutable objects, same
+// as patient-documents: a replace uploads a new path rather than
+// overwriting the old one, then the profiles row is repointed to it — that
+// row update is the atomic "this is now live" moment, since every renderer
+// reads avatar_path from `profiles`/authContext, never Storage directly.
+
+const AVATAR_BUCKET = "avatars";
+
+async function removeAvatarObject(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(AVATAR_BUCKET).remove([path]);
+  if (error) console.error("Avatar cleanup failed for", path, error);
+}
+
+/** Uploads `blob` (already cropped client-side) as the signed-in user's new
+ * profile photo, points `profiles.avatar_path` at it, and best-effort
+ * deletes whatever photo it replaced. */
+export async function uploadAvatarPhoto(blob: Blob): Promise<Profile> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not signed in.");
+
+  const previous = await getCurrentProfile();
+  const path = `${user.id}/${crypto.randomUUID()}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { data, error: updateError } = await supabase
+    .from("profiles")
+    .update({ avatar_path: path })
+    .eq("id", user.id)
+    .select("id, full_name, phone, title, avatar_path")
+    .single();
+
+  if (updateError) {
+    await removeAvatarObject(path);
+    throw updateError;
+  }
+
+  if (previous?.avatar_path) await removeAvatarObject(previous.avatar_path);
+  return data;
+}
+
+/** Clears the signed-in user's photo — avatar_path goes null first (every
+ * renderer falls back to initials immediately), then the old object is
+ * best-effort deleted. */
+export async function removeAvatarPhoto(): Promise<Profile> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not signed in.");
+
+  const previous = await getCurrentProfile();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ avatar_path: null })
+    .eq("id", user.id)
+    .select("id, full_name, phone, title, avatar_path")
+    .single();
+  if (error) throw error;
+
+  if (previous?.avatar_path) await removeAvatarObject(previous.avatar_path);
   return data;
 }
 
@@ -202,7 +270,7 @@ function breaksToDb(value: ClinicSettings["breaks"]): BreakRow[] {
 }
 
 const CLINIC_SELECT_COLUMNS =
-  "id, name, phone, email, address, city, working_days, opening_time, closing_time, appointment_duration_minutes, online_booking_enabled, breaks";
+  "id, name, phone, email, address, city, working_days, opening_time, closing_time, appointment_duration_minutes, online_booking_enabled, breaks, logo_path";
 
 interface ClinicRow {
   id: string;
@@ -217,6 +285,7 @@ interface ClinicRow {
   appointment_duration_minutes: number;
   online_booking_enabled: boolean;
   breaks: unknown;
+  logo_path: string | null;
 }
 
 function clinicRowToSettings(row: ClinicRow): ClinicSettings {
@@ -232,6 +301,7 @@ function clinicRowToSettings(row: ClinicRow): ClinicSettings {
     appointmentDuration: row.appointment_duration_minutes,
     onlineBookingEnabled: row.online_booking_enabled,
     breaks: breaksFromDb(row.breaks),
+    logoPath: row.logo_path,
   };
 }
 
@@ -271,5 +341,59 @@ export async function updateClinicSettings(
     .select(CLINIC_SELECT_COLUMNS)
     .single();
   if (error) throw error;
+  return clinicRowToSettings(data);
+}
+
+// Clinic logo ---------------------------------------------------------------
+// Private "clinic-logos" bucket, path {clinic_id}/{uuid}.jpg — same
+// immutable-object/repoint-then-cleanup shape as the avatar functions above.
+// RLS restricts writes to the clinic owner (is_clinic_owner), matching the
+// existing "clinic owners can update their clinic" policy this logo is
+// conceptually part of.
+
+const CLINIC_LOGO_BUCKET = "clinic-logos";
+
+async function removeClinicLogoObject(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(CLINIC_LOGO_BUCKET).remove([path]);
+  if (error) console.error("Clinic logo cleanup failed for", path, error);
+}
+
+export async function uploadClinicLogo(clinicId: string, blob: Blob): Promise<ClinicSettings> {
+  const previous = await getClinicSettings(clinicId);
+  const path = `${clinicId}/${crypto.randomUUID()}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(CLINIC_LOGO_BUCKET)
+    .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { data, error: updateError } = await supabase
+    .from("clinics")
+    .update({ logo_path: path })
+    .eq("id", clinicId)
+    .select(CLINIC_SELECT_COLUMNS)
+    .single();
+
+  if (updateError) {
+    await removeClinicLogoObject(path);
+    throw updateError;
+  }
+
+  if (previous.logoPath) await removeClinicLogoObject(previous.logoPath);
+  return clinicRowToSettings(data);
+}
+
+export async function removeClinicLogo(clinicId: string): Promise<ClinicSettings> {
+  const previous = await getClinicSettings(clinicId);
+
+  const { data, error } = await supabase
+    .from("clinics")
+    .update({ logo_path: null })
+    .eq("id", clinicId)
+    .select(CLINIC_SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+
+  if (previous.logoPath) await removeClinicLogoObject(previous.logoPath);
   return clinicRowToSettings(data);
 }

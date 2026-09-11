@@ -162,6 +162,10 @@ interface ClinicDataValue {
   deleteDocument: (id: string) => Promise<void>;
   updateClinicSettings: (patch: Partial<ClinicSettings>) => Promise<void>;
   updateDoctorProfile: (patch: Partial<DoctorProfile>) => Promise<void>;
+  uploadAvatarPhoto: (blob: Blob) => Promise<void>;
+  removeAvatarPhoto: () => Promise<void>;
+  uploadClinicLogo: (blob: Blob) => Promise<void>;
+  removeClinicLogo: () => Promise<void>;
   setVisitStatus: (visitId: string, status: VisitStatus) => Promise<void>;
   cancelVisit: (visitId: string) => Promise<void>;
 }
@@ -192,6 +196,7 @@ const BLANK_CLINIC_SETTINGS: ClinicSettings = {
   appointmentDuration: 30,
   onlineBookingEnabled: true,
   breaks: [],
+  logoPath: null,
 };
 
 export function ClinicDataProvider({ children }: { children: ReactNode }) {
@@ -223,6 +228,7 @@ export function ClinicDataProvider({ children }: { children: ReactNode }) {
       email: user?.email ?? "",
       phone: profile?.phone ?? "",
       title: profile?.title ?? "",
+      avatarPath: profile?.avatar_path ?? null,
     }),
     [profile, user],
   );
@@ -479,6 +485,34 @@ export function ClinicDataProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const uploadAvatarPhoto = useCallback(
+    async (blob: Blob) => {
+      await clinicService.uploadAvatarPhoto(blob);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const removeAvatarPhoto = useCallback(async () => {
+    await clinicService.removeAvatarPhoto();
+    await refresh();
+  }, [refresh]);
+
+  const uploadClinicLogo = useCallback(
+    async (blob: Blob) => {
+      if (!clinicId) throw new Error("No active clinic to update the logo for.");
+      const updated = await clinicService.uploadClinicLogo(clinicId, blob);
+      setClinicSettings(updated);
+    },
+    [clinicId],
+  );
+
+  const removeClinicLogo = useCallback(async () => {
+    if (!clinicId) throw new Error("No active clinic to update the logo for.");
+    const updated = await clinicService.removeClinicLogo(clinicId);
+    setClinicSettings(updated);
+  }, [clinicId]);
+
   const setVisitStatus = useCallback(async (visitId: string, status: VisitStatus) => {
     const updated = await visitsService.updateVisitStatus(visitId, status);
     setVisits((prev) => prev.map((v) => (v.id === visitId ? updated : v)));
@@ -533,6 +567,10 @@ export function ClinicDataProvider({ children }: { children: ReactNode }) {
       deleteDocument,
       updateClinicSettings,
       updateDoctorProfile,
+      uploadAvatarPhoto,
+      removeAvatarPhoto,
+      uploadClinicLogo,
+      removeClinicLogo,
       setVisitStatus,
       cancelVisit,
     }),
@@ -563,6 +601,10 @@ export function ClinicDataProvider({ children }: { children: ReactNode }) {
       deleteDocument,
       updateClinicSettings,
       updateDoctorProfile,
+      uploadAvatarPhoto,
+      removeAvatarPhoto,
+      uploadClinicLogo,
+      removeClinicLogo,
       setVisitStatus,
       cancelVisit,
     ],

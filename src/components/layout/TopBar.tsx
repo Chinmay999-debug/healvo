@@ -1,10 +1,14 @@
 import { Menu } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Search } from "../ui/Search";
+import { Avatar } from "../ui/Avatar";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
 import { useClinicData } from "../../state/clinicData";
 import { initials } from "../../lib/utils";
+import { useSignedMediaUrl } from "../../lib/signedMedia";
+
+const AVATAR_BUCKET = "avatars";
 
 export function TopBar({
   crumb,
@@ -17,6 +21,7 @@ export function TopBar({
 }) {
   const { doctorProfile } = useClinicData();
   const displayInitials = initials(doctorProfile.name) || "?";
+  const avatarPhotoUrl = useSignedMediaUrl(AVATAR_BUCKET, doctorProfile.avatarPath);
 
   return (
     <header className="flex shrink-0 flex-col border-b border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -59,9 +64,9 @@ export function TopBar({
           <Link
             to="/settings/account"
             aria-label="Account settings"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-mint-bg)] text-[12px] font-bold text-[var(--color-teal)] outline-none transition-colors hover:bg-[var(--color-mint-bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]/50"
+            className="flex shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]/50"
           >
-            {displayInitials}
+            <Avatar initials={displayInitials} photoUrl={avatarPhotoUrl} size={36} className="text-[12px] hover:bg-[var(--color-mint-bg-hover)]" />
           </Link>
         </div>
       </div>

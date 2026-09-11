@@ -16,7 +16,6 @@ export type ClinicRoleChoice = "dentist" | "staff";
 export interface AboutYouDraft {
   name: string;
   role: ClinicRoleChoice;
-  photoDataUrl: string | null;
 }
 
 export interface ClinicDraft {
@@ -80,7 +79,6 @@ export function OnboardingWizard({
   const [aboutYou, setAboutYou] = useState<AboutYouDraft>({
     name: initialName || profile?.full_name || "",
     role: "dentist",
-    photoDataUrl: null,
   });
   const [clinicDraft, setClinicDraft] = useState<ClinicDraft>({
     clinicName: "",
