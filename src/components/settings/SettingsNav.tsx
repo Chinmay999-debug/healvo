@@ -1,9 +1,10 @@
 import { NavLink } from "react-router-dom";
-import { Building2, CalendarClock, Link2, UserCog } from "lucide-react";
+import { Building2, CalendarClock, CreditCard, Link2, UserCog } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const sections = [
   { key: "clinic", label: "Clinic", icon: Building2 },
+  { key: "subscription", label: "Subscription & Plan", icon: CreditCard },
   { key: "appointments", label: "Appointments", icon: CalendarClock },
   { key: "booking", label: "Booking", icon: Link2 },
   { key: "account", label: "Account", icon: UserCog },

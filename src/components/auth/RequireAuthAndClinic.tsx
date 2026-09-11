@@ -2,33 +2,17 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Logo } from "../ui/Logo";
 import { AuthScreen } from "./AuthScreen";
 import { OnboardingWizard } from "../onboarding/OnboardingWizard";
+import { ClinicSuspendedScreen } from "./ClinicSuspendedScreen";
+import { SubscriptionExpiredScreen } from "./SubscriptionExpiredScreen";
 import { useAuth } from "../../state/authContext";
+import { useSubscription } from "../../state/subscriptionContext";
 
-/** P4.2: the app has real Supabase Auth + tenancy now, so every route this
- * component wraps requires a signed-in user with at least one active
- * clinic. The public booking page (/book/:slug) has no account of its own
- * (see services/publicBooking.ts) and, as of P4.7, is mounted as a fully
- * separate top-level route in App.tsx — it never renders through this
- * component at all, so there's no bypass to maintain here. This wraps
- * App.tsx's authenticated route tree unchanged — it only decides WHETHER
- * that tree renders yet, never what's inside it.
- *
- * Account-behavior contract (see the frontend onboarding task):
- *  - New normal account:      no user -> AuthScreen (signup) -> no clinic yet
- *                              -> OnboardingWizard -> clinic created -> app.
- *  - Existing normal account: no user -> AuthScreen (login) -> already has a
- *                              clinic -> app directly, wizard never mounts.
- *  - Demo account:            same as "existing" — the demo user already
- *                              belongs to the permanent demo clinic, so it
- *                              never has a null activeClinic and never sees
- *                              onboarding. */
-
-function LoadingScreen() {
+function LoadingScreen({ message = "Loading your account…" }: { message?: string }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-canvas)] px-4">
       <div className="flex flex-col items-center gap-3">
         <Logo />
-        <p className="text-[13px] text-[var(--color-muted)]">Loading your account…</p>
+        <p className="text-[13px] text-[var(--color-muted)]">{message}</p>
       </div>
     </div>
   );
@@ -36,6 +20,7 @@ function LoadingScreen() {
 
 export function RequireAuthAndClinic({ children }: { children: ReactNode }) {
   const auth = useAuth();
+  const sub = useSubscription();
 
   const [onboarding, setOnboarding] = useState(false);
   const [pendingName, setPendingName] = useState("");
@@ -50,24 +35,59 @@ export function RequireAuthAndClinic({ children }: { children: ReactNode }) {
   }, [auth.user]);
 
   // Latches the wizard on the first render where there's a signed-in user
-  // with no clinic yet, and — this is the important part — keeps it latched
-  // even after create_clinic_with_owner succeeds partway through step 2 and
-  // activeClinic becomes non-null, so the feature-intro/completion steps
-  // still get shown. Only onFinish() (StepCompletion's "Go to Healvo")
-  // clears it.
+  // with no clinic yet, and keeps it latched until onFinish().
   useEffect(() => {
     if (!auth.loading && auth.user && !auth.activeClinic) setOnboarding(true);
   }, [auth.loading, auth.user, auth.activeClinic]);
 
-  if (auth.loading) return <LoadingScreen />;
+  if (auth.loading) return <LoadingScreen message="Loading your account…" />;
   if (!auth.user) return <AuthScreen onAccountCreated={setPendingName} />;
 
-  // Also checked synchronously (not just via the effect above) so a
-  // brand-new, clinic-less account never flashes the real app shell for a
-  // frame before the effect has a chance to run.
-  const needsOnboarding = onboarding || !auth.activeClinic;
-  if (needsOnboarding) {
+  if (onboarding || !auth.activeClinic) {
     return <OnboardingWizard initialName={pendingName} onFinish={() => setOnboarding(false)} />;
   }
+
+  // Clinic suspended by platform administration: pause SaaS access with clear guidance
+  if (auth.activeClinic?.status === "suspended") {
+    return <ClinicSuspendedScreen clinicName={auth.activeClinic.name} />;
+  }
+
+  // While subscription state is resolving, never flash the protected clinic app
+  if (sub.loading) {
+    return <LoadingScreen message="Verifying subscription access…" />;
+  }
+
+  // Safe failure state if subscription resolution errored
+  if (sub.error && !sub.subscription) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--color-canvas)] px-4">
+        <div className="flex max-w-md flex-col items-center gap-4 text-center">
+          <Logo />
+          <p className="text-[14px] font-medium text-[var(--color-ink)]">
+            Could not verify subscription status for {auth.activeClinic.name}.
+          </p>
+          <p className="text-[12px] text-[var(--color-muted)]">{sub.error}</p>
+          <button
+            type="button"
+            onClick={() => sub.refreshSubscription()}
+            className="rounded-lg bg-[var(--color-teal)] px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+          >
+            Retry Verification
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Clinic subscription / trial expired: render non-destructive paywall
+  if (!sub.hasAccess) {
+    return (
+      <SubscriptionExpiredScreen
+        clinicName={auth.activeClinic.name}
+        clinicId={auth.activeClinic.id}
+      />
+    );
+  }
+
   return <>{children}</>;
 }

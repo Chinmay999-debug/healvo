@@ -11,6 +11,7 @@ import { ClinicSettingsPanel } from "../components/settings/ClinicSettingsPanel"
 import { AppointmentsSettingsPanel } from "../components/settings/AppointmentsSettingsPanel";
 import { BookingSettingsPanel } from "../components/settings/BookingSettingsPanel";
 import { AccountSettingsPanel } from "../components/settings/AccountSettingsPanel";
+import { SubscriptionSettingsPanel } from "../components/settings/SubscriptionSettingsPanel";
 import { useClinicData } from "../state/clinicData";
 
 function isSettingsSection(value: string | undefined): value is SettingsSectionKey {
@@ -49,6 +50,7 @@ export default function Settings() {
           ) : (
             <>
               {active === "clinic" && <ClinicSettingsPanel />}
+              {active === "subscription" && <SubscriptionSettingsPanel />}
               {active === "appointments" && <AppointmentsSettingsPanel />}
               {active === "booking" && <BookingSettingsPanel />}
             </>

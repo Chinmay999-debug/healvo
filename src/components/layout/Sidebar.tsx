@@ -11,6 +11,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
+  Clock,
+  CheckCircle2,
+  CreditCard,
 } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import { Logo } from "../ui/Logo";
@@ -18,6 +21,7 @@ import { Avatar } from "../ui/Avatar";
 import { ClinicSelector } from "./ClinicSelector";
 import { cn, initials } from "../../lib/utils";
 import { useAuth } from "../../state/authContext";
+import { useSubscription } from "../../state/subscriptionContext";
 import { useClinicData } from "../../state/clinicData";
 import { useSignedMediaUrl } from "../../lib/signedMedia";
 
@@ -49,6 +53,7 @@ export function Sidebar({
   showCollapseToggle?: boolean;
 }) {
   const { signOut } = useAuth();
+  const { isTrial, isActive, daysRemaining } = useSubscription();
   const { doctorProfile } = useClinicData();
   const displayName = doctorProfile.name || "Your account";
   const displayInitials = initials(displayName) || "?";
@@ -192,6 +197,15 @@ export function Sidebar({
                 <UserCircle size={16} strokeWidth={2} className="text-[var(--color-muted)]" />
                 Profile
               </Link>
+              <Link
+                to="/settings/subscription"
+                role="menuitem"
+                onClick={handleProfileClick}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-canvas)]"
+              >
+                <CreditCard size={16} strokeWidth={2} className="text-[var(--color-muted)]" />
+                Subscription & Plan
+              </Link>
               <button
                 type="button"
                 role="menuitem"
@@ -204,6 +218,63 @@ export function Sidebar({
             </div>
           )}
         </div>
+
+        {/* Subscription Indicator */}
+        {!collapsed && isTrial && (
+          <div className="mt-2.5 flex items-center justify-between rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px]">
+            <div className="flex items-center gap-1.5 truncate">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span className="truncate font-medium text-amber-800 dark:text-amber-300">
+                {daysRemaining === 0 ? "Trial ends today" : `Free trial · ${daysRemaining}d left`}
+              </span>
+            </div>
+            <Link
+              to="/settings/subscription"
+              onClick={onNavigate}
+              className="ml-1.5 shrink-0 text-[11px] font-bold text-[var(--color-teal)] hover:underline"
+            >
+              Choose plan
+            </Link>
+          </div>
+        )}
+
+        {!collapsed && !isTrial && isActive && (
+          <div className="mt-2.5 flex items-center justify-between rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px]">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+              <span className="truncate font-medium text-emerald-800 dark:text-emerald-300">
+                Healvo Dental · Active
+              </span>
+            </div>
+            <Link
+              to="/settings/subscription"
+              onClick={onNavigate}
+              className="ml-1.5 shrink-0 text-[11px] font-semibold text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+            >
+              Manage
+            </Link>
+          </div>
+        )}
+
+        {collapsed && isTrial && (
+          <Link
+            to="/settings/subscription"
+            title={daysRemaining === 0 ? "Free trial ends today" : `Free trial · ${daysRemaining} days left`}
+            className="mt-2 flex items-center justify-center rounded-lg p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+          >
+            <Clock size={16} />
+          </Link>
+        )}
+
+        {collapsed && !isTrial && isActive && (
+          <Link
+            to="/settings/subscription"
+            title="Healvo Dental · Active Subscription"
+            className="mt-2 flex items-center justify-center rounded-lg p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+          >
+            <CheckCircle2 size={16} />
+          </Link>
+        )}
 
         {showCollapseToggle && (
           <button

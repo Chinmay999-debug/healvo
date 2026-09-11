@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
+import { TrialBanner } from "./TrialBanner";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { HealvoAiWidget } from "./HealvoAiWidget";
 
@@ -22,6 +23,7 @@ export function AppShell({
       <MobileNavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="print:hidden">
+          <TrialBanner />
           <TopBar
             crumb={crumb}
             mobileNavOpen={mobileNavOpen}

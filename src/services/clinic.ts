@@ -35,6 +35,8 @@ export interface ClinicSummary {
    * is_clinic_member(clinic_id) policies are what actually gate access. See
    * healvo-backend/supabase/migrations/20260907141045_demo_account_seed.sql. */
   is_demo: boolean;
+  /** Platform tenant lifecycle status: 'active' or 'suspended'. */
+  status?: "active" | "suspended";
 }
 
 export interface ClinicMembership {
@@ -67,7 +69,7 @@ export async function getUserClinics(): Promise<ClinicMembership[]> {
 
   const { data, error } = await supabase
     .from("clinic_memberships")
-    .select("id, role, status, clinic:clinics(id, name, slug, is_demo)")
+    .select("id, role, status, clinic:clinics(id, name, slug, is_demo, status)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
   if (error) throw error;

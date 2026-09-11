@@ -19,12 +19,14 @@ import { PatientDocuments } from "./components/patient-record/PatientDocuments";
 import { PatientBilling } from "./components/patient-record/PatientBilling";
 import { ClinicDataProvider } from "./state/clinicData";
 import { AuthProvider } from "./state/authContext";
+import { SubscriptionProvider } from "./state/subscriptionContext";
 import { RequireAuthAndClinic } from "./components/auth/RequireAuthAndClinic";
 
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <SubscriptionProvider>
+        <Routes>
         {/* Public booking has no account of its own and must work for a
             genuinely anonymous visitor — it lives entirely outside
             RequireAuthAndClinic/ClinicDataProvider and is keyed by the
@@ -75,6 +77,7 @@ export default function App() {
           }
         />
       </Routes>
+      </SubscriptionProvider>
     </AuthProvider>
   );
 }
