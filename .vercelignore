@@ -1,0 +1,7 @@
+# Never upload local-only credentials with a CLI deployment. Vercel project
+# environment variables supply VITE_* values at build time and server secrets
+# at runtime.
+Creds
+.env
+.env.*
+!.env.example

@@ -6,15 +6,14 @@ import {
   runRazorpayWebhook,
 } from "./subscriptionHandler.ts";
 
-function readRequestBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => {
-      data += chunk;
-    });
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
-  });
+// Collected as bytes so a multi-byte character split across chunks can't alter
+// the webhook body Razorpay signed.
+async function readRequestBody(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function sendJson(res: any, status: number, body: unknown) {
@@ -77,7 +76,8 @@ export function createSubscriptionMiddleware(
 
     if (url === "/api/subscription/webhook") {
       const signature = req.headers["x-razorpay-signature"] as string | undefined;
-      const result = await runRazorpayWebhook(env, raw, signature);
+      const eventId = req.headers["x-razorpay-event-id"] as string | undefined;
+      const result = await runRazorpayWebhook(env, raw, signature, eventId);
       sendJson(res, result.status, result.body);
       return;
     }

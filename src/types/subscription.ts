@@ -48,6 +48,38 @@ export interface ClinicSubscription {
   created_at: string;
 }
 
+export type GatewaySubscriptionStatus =
+  | "created"
+  | "authenticated"
+  | "active"
+  | "pending"
+  | "halted"
+  | "cancelled"
+  | "completed"
+  | "expired"
+  | "paused";
+
+/** Server-computed billing state from get_clinic_billing_state. */
+export interface ClinicBillingState {
+  clinic_id: string;
+  plan_code: string | null;
+  billing_mode: "one_time" | "recurring" | null;
+  subscription_status: SubscriptionStatus | null;
+  paid_through: string | null;
+  recurring_monthly_available: boolean;
+  auto_renew: boolean;
+  gateway_status: GatewaySubscriptionStatus | null;
+  cancel_at_cycle_end: boolean;
+  payment_method: "upi" | "card" | null;
+  next_charge_at: string | null;
+  gateway_start_at: string | null;
+  gateway_current_end: string | null;
+  needs_reauthorization: boolean;
+  grace_ends_at: string | null;
+  in_grace: boolean;
+  annual_to_monthly_eligible: boolean;
+}
+
 export interface PlatformInvoice {
   id: string;
   clinic_id: string;

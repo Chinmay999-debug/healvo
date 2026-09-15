@@ -11,8 +11,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
-  Clock,
-  CheckCircle2,
   CreditCard,
 } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
@@ -24,8 +22,73 @@ import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
 import { useClinicData } from "../../state/clinicData";
 import { useSignedMediaUrl } from "../../lib/signedMedia";
+import { planDisplayName } from "../../services/subscription";
 
 const AVATAR_BUCKET = "avatars";
+
+/** Compact, always-clickable plan status under the account row. Amber only
+ * when action is due (trial, or a plan within 7 days of ending). */
+function SubscriptionIndicator({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  const { isTrial, isActive, inGrace, autoRenew, daysRemaining, activePlan } = useSubscription();
+  if (!isTrial && !isActive && !inGrace) return null;
+
+  const annual = activePlan?.interval === "year";
+  const needsAttention = isTrial || inGrace || (!autoRenew && daysRemaining <= 7);
+  const label = isTrial ? "Free trial" : planDisplayName(activePlan?.interval);
+  const status = isTrial
+    ? `${daysRemaining}d left`
+    : inGrace
+      ? "Payment due"
+      : autoRenew
+        ? "Auto-renews"
+        : daysRemaining <= 7
+          ? `Ends in ${daysRemaining}d`
+          : annual
+            ? "One-time"
+            : "Active";
+  const title = `${label} · ${isTrial ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left` : status}`;
+
+  return (
+    <Link
+      to="/settings/subscription"
+      onClick={onNavigate}
+      title={title}
+      aria-label={title}
+      className={cn(
+        "mt-2.5 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] transition-colors hover:bg-[var(--color-canvas)]",
+        collapsed && "justify-center px-0",
+      )}
+    >
+      <span
+        className={cn(
+          "h-2 w-2 shrink-0 rounded-full",
+          needsAttention ? "bg-[var(--color-amber-text)]" : "bg-[var(--color-mint-text)]",
+        )}
+      />
+      {!collapsed && (
+        <>
+          <span className="min-w-0 flex-1 truncate font-semibold text-[var(--color-ink)]">{label}</span>
+          <span
+            className={cn(
+              "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
+              needsAttention
+                ? "bg-[var(--color-amber-bg)] text-[var(--color-amber-text)]"
+                : "bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]",
+            )}
+          >
+            {status}
+          </span>
+        </>
+      )}
+    </Link>
+  );
+}
 
 const navItems = [
   { to: "/overview", label: "Overview", icon: LayoutGrid },
@@ -53,7 +116,6 @@ export function Sidebar({
   showCollapseToggle?: boolean;
 }) {
   const { signOut } = useAuth();
-  const { isTrial, isActive, daysRemaining } = useSubscription();
   const { doctorProfile } = useClinicData();
   const displayName = doctorProfile.name || "Your account";
   const displayInitials = initials(displayName) || "?";
@@ -219,62 +281,7 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Subscription Indicator */}
-        {!collapsed && isTrial && (
-          <div className="mt-2.5 flex items-center justify-between rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px]">
-            <div className="flex items-center gap-1.5 truncate">
-              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-              <span className="truncate font-medium text-amber-800 dark:text-amber-300">
-                {daysRemaining === 0 ? "Trial ends today" : `Free trial · ${daysRemaining}d left`}
-              </span>
-            </div>
-            <Link
-              to="/settings/subscription"
-              onClick={onNavigate}
-              className="ml-1.5 shrink-0 text-[11px] font-bold text-[var(--color-teal)] hover:underline"
-            >
-              Choose plan
-            </Link>
-          </div>
-        )}
-
-        {!collapsed && !isTrial && isActive && (
-          <div className="mt-2.5 flex items-center justify-between rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px]">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-              <span className="truncate font-medium text-emerald-800 dark:text-emerald-300">
-                Healvo Dental · Active
-              </span>
-            </div>
-            <Link
-              to="/settings/subscription"
-              onClick={onNavigate}
-              className="ml-1.5 shrink-0 text-[11px] font-semibold text-[var(--color-muted)] hover:text-[var(--color-ink)]"
-            >
-              Manage
-            </Link>
-          </div>
-        )}
-
-        {collapsed && isTrial && (
-          <Link
-            to="/settings/subscription"
-            title={daysRemaining === 0 ? "Free trial ends today" : `Free trial · ${daysRemaining} days left`}
-            className="mt-2 flex items-center justify-center rounded-lg p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-          >
-            <Clock size={16} />
-          </Link>
-        )}
-
-        {collapsed && !isTrial && isActive && (
-          <Link
-            to="/settings/subscription"
-            title="Healvo Dental · Active Subscription"
-            className="mt-2 flex items-center justify-center rounded-lg p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
-          >
-            <CheckCircle2 size={16} />
-          </Link>
-        )}
+        <SubscriptionIndicator collapsed={collapsed} onNavigate={onNavigate} />
 
         {showCollapseToggle && (
           <button

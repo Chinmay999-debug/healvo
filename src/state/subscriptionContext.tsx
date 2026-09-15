@@ -18,16 +18,22 @@ import {
   getAccessEndsAt,
   getActivePlan,
 } from "../services/subscription";
-import type { ClinicSubscription } from "../types/subscription";
+import { getClinicBillingState, hasGraceAccess } from "../services/platformBilling";
+import type { ClinicBillingState, ClinicSubscription } from "../types/subscription";
 
 export interface SubscriptionContextValue {
   subscription: ClinicSubscription | null;
+  /** Recurring billing state (auto-renew, next charge, grace). Null if unavailable. */
+  billing: ClinicBillingState | null;
   loading: boolean;
   error: string | null;
   hasAccess: boolean;
   isTrial: boolean;
   isExpired: boolean;
   isActive: boolean;
+  /** Paid time has ended but the server's 3-day renewal grace still applies. */
+  inGrace: boolean;
+  autoRenew: boolean;
   daysRemaining: number;
   endsAt: Date | null;
   activePlan: { code: string; name: string; interval: string } | null;
@@ -42,18 +48,26 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
 
   const [loading, setLoading] = useState(true);
   const [subscription, setSubscription] = useState<ClinicSubscription | null>(null);
+  const [billing, setBilling] = useState<ClinicBillingState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSubscription = useCallback(async () => {
     if (!clinicId || !user) {
       setSubscription(null);
+      setBilling(null);
       setLoading(false);
       return;
     }
 
     try {
-      const data = await getClinicSubscription(clinicId);
+      const [data, billingState] = await Promise.all([
+        getClinicSubscription(clinicId),
+        // Billing state only adds grace and auto-renew detail; if it can't load,
+        // access falls back to the paid entitlement alone.
+        getClinicBillingState(clinicId).catch(() => null),
+      ]);
       setSubscription(data);
+      setBilling(billingState);
       setError(null);
     } catch (err: any) {
       setError(err?.message || "Failed to load subscription details");
@@ -68,28 +82,26 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   }, [fetchSubscription]);
 
   const value = useMemo<SubscriptionContextValue>(() => {
-    const hasAccess = hasSubscriptionAccess(subscription);
-    const isTrial = isTrialing(subscription);
-    const isExpired = isTrialExpired(subscription);
-    const isActive = isActiveSubscribed(subscription);
-    const daysRemaining = getDaysRemaining(subscription);
-    const endsAt = getAccessEndsAt(subscription);
-    const activePlan = getActivePlan(subscription);
+    const paidAccess = hasSubscriptionAccess(subscription);
+    const inGrace = !paidAccess && hasGraceAccess(billing);
 
     return {
       subscription,
+      billing,
       loading,
       error,
-      hasAccess,
-      isTrial,
-      isExpired,
-      isActive,
-      daysRemaining,
-      endsAt,
-      activePlan,
+      hasAccess: paidAccess || inGrace,
+      isTrial: isTrialing(subscription),
+      isExpired: isTrialExpired(subscription),
+      isActive: isActiveSubscribed(subscription),
+      inGrace,
+      autoRenew: billing?.auto_renew ?? false,
+      daysRemaining: getDaysRemaining(subscription),
+      endsAt: getAccessEndsAt(subscription),
+      activePlan: getActivePlan(subscription),
       refreshSubscription: fetchSubscription,
     };
-  }, [subscription, loading, error, fetchSubscription]);
+  }, [subscription, billing, loading, error, fetchSubscription]);
 
   return (
     <SubscriptionContext.Provider value={value}>

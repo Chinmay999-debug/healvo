@@ -139,6 +139,49 @@ export function formatPriceINR(paise: number): string {
   }).format(rupees);
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Formats an access boundary for display, e.g. "14 Oct 2026" (or "14 Oct").
+ * Built by hand because en-IN renders September as "Sept".
+ */
+export function formatAccessDate(value: Date | string, withYear = true): string {
+  const date = new Date(value);
+  const dayMonth = `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}`;
+  return withYear ? `${dayMonth} ${date.getFullYear()}` : dayMonth;
+}
+
+/**
+ * The access window the subscription status describes: the trial window while
+ * trialing, otherwise the current paid period. Null if a bound is missing.
+ */
+export function getAccessWindow(
+  subscription: ClinicSubscription | null,
+): { startsAt: Date; endsAt: Date } | null {
+  if (!subscription) return null;
+  const trialing = subscription.status === "trialing";
+  const start = trialing ? subscription.trial_started_at : subscription.current_period_started_at;
+  const end = trialing ? subscription.trial_ends_at : subscription.current_period_ends_at;
+  if (!start || !end) return null;
+  return { startsAt: new Date(start), endsAt: new Date(end) };
+}
+
+/** Percentage (0–100) of an access window already elapsed, from real timestamps. */
+export function getAccessProgress(
+  window: { startsAt: Date; endsAt: Date },
+  asOf: Date = new Date(),
+): number {
+  const total = window.endsAt.getTime() - window.startsAt.getTime();
+  if (total <= 0) return 100;
+  const elapsed = asOf.getTime() - window.startsAt.getTime();
+  return Math.min(100, Math.max(0, (elapsed / total) * 100));
+}
+
+/** Customer-facing plan name for a billing interval. */
+export function planDisplayName(interval: string | null | undefined): string {
+  return interval === "year" ? "Annual" : "Monthly";
+}
+
 // Data Access RPCs ------------------------------------------------------------
 
 /**
@@ -195,6 +238,25 @@ export async function getClinicPlatformInvoices(
   return (data ?? []) as unknown as PlatformInvoice[];
 }
 
+/**
+ * Reads the server-side status of a checkout order ("created", "captured",
+ * "failed"), or null if unknown. Used to detect a webhook-confirmed payment
+ * when direct verification could not complete.
+ */
+export async function getSubscriptionPaymentStatus(orderId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("subscription_payments")
+    .select("status")
+    .eq("gateway_order_id", orderId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data?.status as string | undefined) ?? null;
+}
+
 // Payment Gateway Integration -------------------------------------------------
 
 export interface CheckoutData {
@@ -214,12 +276,51 @@ export interface RazorpayPaymentResponse {
   razorpay_signature: string;
 }
 
+/** What Checkout returns: an order id for one-time payments, a subscription id for recurring. */
+export interface RazorpayCheckoutResponse {
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  razorpay_order_id?: string;
+  razorpay_subscription_id?: string;
+}
+
+export interface RazorpayCheckoutOptions {
+  key: string;
+  /** One-time Orders only; a subscription's amount comes from its Razorpay plan. */
+  amount?: number;
+  currency?: string;
+  order_id?: string;
+  subscription_id?: string;
+  name: string;
+  description?: string;
+  prefill?: { name?: string; email?: string; contact?: string };
+  theme?: { color?: string };
+  modal?: { ondismiss?: () => void; confirm_close?: boolean };
+  handler: (response: RazorpayCheckoutResponse) => void;
+}
+
+export interface RazorpayCheckoutInstance {
+  open(): void;
+  on(
+    event: "payment.failed",
+    callback: (response: { error?: { description?: string } }) => void,
+  ): void;
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => RazorpayCheckoutInstance;
+  }
+}
+
 export interface ConfirmPaymentResult {
   success: boolean;
   idempotent_replay?: boolean;
   subscription_id: string;
   status: string;
   current_period_ends_at: string;
+  entitlement_starts_at?: string | null;
+  entitlement_ends_at?: string | null;
   invoice_id: string;
   invoice_number: string;
 }
@@ -229,7 +330,7 @@ export interface ConfirmPaymentResult {
  */
 export function loadRazorpayScript(): Promise<boolean> {
   return new Promise((resolve) => {
-    if (typeof window !== "undefined" && (window as any).Razorpay) {
+    if (typeof window !== "undefined" && window.Razorpay) {
       resolve(true);
       return;
     }
