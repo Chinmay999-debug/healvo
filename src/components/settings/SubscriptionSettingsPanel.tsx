@@ -309,7 +309,7 @@ export function SubscriptionSettingsPanel() {
         <Card className="p-5">
           <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Manage subscription</h2>
           <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-            {formatPriceINR(49900)} / month + GST, charged automatically.
+            {formatPriceINR(49900)} / month, charged automatically.
           </p>
 
           <dl className="mt-4 divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] text-[13px]">

@@ -134,7 +134,7 @@ export function PlanPicker({
       plan: monthly,
       badge: null as string | null,
       lines: recurringMonthly
-        ? ["Renews automatically", "Cancel anytime"]
+        ? ["7-day free trial · No card required", "Renews automatically"]
         : [monthsOfAccess(monthly.accessMonths)],
       action: monthlyChoice,
     },
@@ -142,7 +142,7 @@ export function PlanPicker({
       plan: annual,
       badge: "2 months free",
       lines: recurringMonthly
-        ? [monthsOfAccess(annual.accessMonths), "One-time payment", "No automatic renewal"]
+        ? ["14 months access", "One-time payment"]
         : [monthsOfAccess(annual.accessMonths), "Pay for 12 and get 2 free"],
       action: { label: annualLabel(), disabled: false } as { label: string; disabled: boolean; note?: string },
     },
@@ -171,7 +171,7 @@ export function PlanPicker({
                 <span className="text-[22px] font-bold text-[var(--color-ink)] tabular-nums">
                   {formatPriceINR(plan.pricePaise)}
                 </span>
-                <span className="text-[13px] text-[var(--color-muted)]">/ {plan.periodLabel} + GST</span>
+                <span className="text-[13px] text-[var(--color-muted)]">/ {plan.periodLabel}</span>
               </div>
 
               <div className="mt-1 flex-1 space-y-0.5 text-[13px] text-[var(--color-muted)]">
