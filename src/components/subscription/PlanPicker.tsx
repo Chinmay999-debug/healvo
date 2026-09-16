@@ -204,9 +204,6 @@ export function PlanPicker({
         })}
       </div>
 
-      {!recurringMonthly && (
-        <p className="mt-3 text-[12.5px] text-[var(--color-muted)]">No automatic renewal. Every payment is one-time.</p>
-      )}
     </div>
   );
 }
