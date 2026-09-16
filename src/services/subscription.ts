@@ -295,6 +295,7 @@ export interface RazorpayCheckoutOptions {
   description?: string;
   prefill?: { name?: string; email?: string; contact?: string };
   theme?: { color?: string };
+  config?: { display?: { hide?: { method: string }[] } };
   modal?: { ondismiss?: () => void; confirm_close?: boolean };
   handler: (response: RazorpayCheckoutResponse) => void;
 }

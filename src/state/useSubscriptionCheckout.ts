@@ -173,6 +173,11 @@ export function useSubscriptionCheckout() {
             description: "Monthly plan · renews automatically",
             prefill: { email: userEmail },
             theme: { color: BRAND_COLOR },
+            config: {
+              display: {
+                hide: [{ method: "emandate" }]
+              }
+            },
             modal,
             handler: (response) => {
               paymentSubmitted = true;
