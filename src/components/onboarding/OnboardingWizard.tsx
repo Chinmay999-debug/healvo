@@ -169,7 +169,7 @@ export function OnboardingWizard({
     setCreating(true);
     setCreateError(null);
     try {
-      await createClinicWithOwner({
+      const newClinic = await createClinicWithOwner({
         name: clinic.clinicName.trim(),
         slug: slugify(clinic.clinicName),
         fullName: aboutYou.fullName.trim(),
@@ -187,6 +187,7 @@ export function OnboardingWizard({
       // instead of a direct updateClinicSettings() call.
       if (user) {
         saveClinicDetailsDraft(user.id, {
+          clinicId: newClinic.id,
           // Normalized here for the same reason updateProfile does it: every
           // other write path stores "+91XXXXXXXXXX", and onboarding was the
           // one place putting bare local digits into the column.

@@ -11,6 +11,7 @@
  * (right when the real app first mounts for that account). */
 
 interface ClinicDetailsDraft {
+  clinicId: string;
   phone: string;
   address: string;
   city: string;
@@ -29,13 +30,15 @@ export function saveClinicDetailsDraft(userId: string, draft: ClinicDetailsDraft
   }
 }
 
-export function consumeClinicDetailsDraft(userId: string): ClinicDetailsDraft | null {
+export function consumeClinicDetailsDraft(userId: string, expectedClinicId: string): ClinicDetailsDraft | null {
   try {
     const key = storageKey(userId);
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     localStorage.removeItem(key);
-    return JSON.parse(raw) as ClinicDetailsDraft;
+    const parsed = JSON.parse(raw) as ClinicDetailsDraft;
+    if (parsed.clinicId !== expectedClinicId) return null;
+    return parsed;
   } catch {
     return null;
   }

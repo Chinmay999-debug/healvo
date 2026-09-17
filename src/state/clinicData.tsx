@@ -258,7 +258,7 @@ export function ClinicDataProvider({ children }: { children: ReactNode }) {
     // "read into local mock state" behavior; every later load just reads the
     // real row directly like any other entity.
     async function loadClinicSettings(clinic: string): Promise<ClinicSettings> {
-      const draft = userId ? consumeClinicDetailsDraft(userId) : null;
+      const draft = userId ? consumeClinicDetailsDraft(userId, clinic) : null;
       if (draft && (draft.phone || draft.address || draft.city)) {
         return clinicService.updateClinicSettings(clinic, {
           phone: draft.phone || undefined,

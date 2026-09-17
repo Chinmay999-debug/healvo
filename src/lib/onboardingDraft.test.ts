@@ -118,3 +118,35 @@ describe("profileNameForPrefill", () => {
     expect(profileNameForPrefill("   ", "a@b.com")).toBe("");
   });
 });
+
+import { consumeClinicDetailsDraft, saveClinicDetailsDraft } from "./onboardingDraft";
+
+describe("clinic details draft isolation", () => {
+  it("consumes the draft only if the clinic ID matches the expected one", () => {
+    const userId = "user-123";
+    saveClinicDetailsDraft(userId, {
+      clinicId: "new-clinic-id",
+      phone: "9812345678",
+      address: "12 MG Road",
+      city: "Bengaluru",
+    });
+
+    // If another clinic's ID is requested, it ignores it and clears the stale draft
+    expect(consumeClinicDetailsDraft(userId, "existing-clinic-id")).toBeNull();
+    // And it is now cleared
+    expect(consumeClinicDetailsDraft(userId, "new-clinic-id")).toBeNull();
+  });
+
+  it("consumes the draft normally if the clinic ID matches", () => {
+    const userId = "user-123";
+    const draft = {
+      clinicId: "new-clinic-id",
+      phone: "9812345678",
+      address: "12 MG Road",
+      city: "Bengaluru",
+    };
+    saveClinicDetailsDraft(userId, draft);
+
+    expect(consumeClinicDetailsDraft(userId, "new-clinic-id")).toEqual(draft);
+  });
+});
