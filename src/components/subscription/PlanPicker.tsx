@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, LoaderCircle, Lock, Sparkles } from "lucide-react";
+import { Check, LoaderCircle, Lock } from "lucide-react";
 import { Button } from "../ui/Button";
 import { cn } from "../../lib/utils";
 import { formatPriceINR, getActiveSubscriptionPlans } from "../../services/subscription";
@@ -190,8 +190,7 @@ export function PlanPicker({
               )}
             >
               {ribbon && (
-                <span className="absolute -top-2.5 left-5 inline-flex items-center gap-1 rounded-full bg-[var(--color-ink-solid)] px-2.5 py-1 text-[11px] font-bold tracking-wide text-[var(--color-ink-solid-text)] shadow-sm">
-                  <Sparkles size={11} strokeWidth={2.5} />
+                <span className="absolute -top-2.5 left-5 inline-flex items-center rounded-full bg-[var(--color-ink-solid)] px-2.5 py-1 text-[11px] font-bold tracking-wide text-[var(--color-ink-solid-text)] shadow-sm">
                   {ribbon}
                 </span>
               )}
