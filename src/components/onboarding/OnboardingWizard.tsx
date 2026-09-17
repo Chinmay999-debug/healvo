@@ -4,27 +4,46 @@ import { Logo } from "../ui/Logo";
 import { useAuth } from "../../state/authContext";
 import { useTheme } from "../../state/themeContext";
 import { createClinicWithOwner } from "../../services/clinic";
-import { saveClinicDetailsDraft } from "../../lib/onboardingDraft";
+import {
+  clearWizardDraft,
+  profileNameForPrefill,
+  readWizardDraft,
+  saveClinicDetailsDraft,
+  saveWizardDraft,
+} from "../../lib/onboardingDraft";
+import { normalizePhone } from "../../lib/phone";
 import { cn, getErrorMessage } from "../../lib/utils";
 import { StepAboutYou } from "./StepAboutYou";
 import { StepClinic } from "./StepClinic";
 import { StepFeatureIntro } from "./StepFeatureIntro";
 import { StepCompletion } from "./StepCompletion";
 
-export type ClinicRoleChoice = "dentist" | "staff";
-
 export interface AboutYouDraft {
-  name: string;
-  role: ClinicRoleChoice;
+  fullName: string;
+  /** The 10-digit local number the PhoneInput works in. Turned into the
+   * stored "+91XXXXXXXXXX" form once, at save time — see handleCreateClinic. */
+  mobile: string;
+  title: string;
 }
 
 export interface ClinicDraft {
   clinicName: string;
+  /** The clinic's own number. Separate from the owner's mobile above: they
+   * are different things and are stored in different rows. */
   phone: string;
   address: string;
   city: string;
   logoDataUrl: string | null;
 }
+
+/** One object for the whole wizard, so no field is ever held in two places
+ * and later steps can read what earlier ones collected. */
+export interface OnboardingDraft {
+  aboutYou: AboutYouDraft;
+  clinic: ClinicDraft;
+}
+
+export const DEFAULT_TITLE = "Owner · Dentist";
 
 const STEP_LABELS = ["About you", "Your clinic", "Explore Healvo", "Done"];
 
@@ -75,20 +94,60 @@ export function OnboardingWizard({
     };
   }, []);
 
-  const [step, setStep] = useState(1);
-  const [aboutYou, setAboutYou] = useState<AboutYouDraft>({
-    name: initialName || profile?.full_name || "",
-    role: "dentist",
+  // One initializer for both the resumed draft and the step it was on, so a
+  // refresh puts the user back exactly where they were rather than on step 1
+  // with step 2's answers.
+  const [{ draft: initialDraft, step: initialStep }] = useState(() => {
+    const saved = user ? readWizardDraft(user.id) : null;
+    return {
+      step: saved?.step ?? 1,
+      draft: {
+        aboutYou: {
+          // A saved draft wins, then the name typed into Create account, then
+          // whatever is already on the profile (Google supplies a real one).
+          fullName:
+            saved?.aboutYou.fullName ||
+            initialName ||
+            profileNameForPrefill(profile?.full_name, user?.email) ||
+            "",
+          mobile: saved?.aboutYou.mobile ?? "",
+          title: saved?.aboutYou.title || profile?.title || DEFAULT_TITLE,
+        },
+        clinic: {
+          clinicName: saved?.clinic.clinicName ?? "",
+          phone: saved?.clinic.phone ?? "",
+          address: saved?.clinic.address ?? "",
+          city: saved?.clinic.city ?? "",
+          logoDataUrl: null,
+        },
+      } satisfies OnboardingDraft,
+    };
   });
-  const [clinicDraft, setClinicDraft] = useState<ClinicDraft>({
-    clinicName: "",
-    phone: "",
-    address: "",
-    city: "",
-    logoDataUrl: null,
-  });
+
+  const [step, setStep] = useState(initialStep);
+  const [draft, setDraft] = useState<OnboardingDraft>(initialDraft);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const { aboutYou, clinic } = draft;
+  const setAboutYou = (next: AboutYouDraft) => setDraft((d) => ({ ...d, aboutYou: next }));
+  const setClinic = (next: ClinicDraft) => setDraft((d) => ({ ...d, clinic: next }));
+
+  // Mirror the draft to localStorage while it can still be lost. Stops at
+  // step 3: the clinic exists by then and the real rows are the truth.
+  useEffect(() => {
+    if (!user || step >= 3) return;
+    saveWizardDraft(user.id, {
+      step,
+      aboutYou,
+      clinic: {
+        clinicName: clinic.clinicName,
+        phone: clinic.phone,
+        address: clinic.address,
+        city: clinic.city,
+      },
+    });
+  }, [user, step, aboutYou, clinic]);
 
   // Once the clinic exists (end of step 2), re-running create_clinic_with_owner
   // would create a second one — so nothing before it is worth losing either.
@@ -96,7 +155,7 @@ export function OnboardingWizard({
   useEffect(() => {
     if (step >= 3) return;
     const hasEnteredSomething =
-      aboutYou.name.trim() || clinicDraft.clinicName.trim() || clinicDraft.phone.trim();
+      aboutYou.fullName.trim() || clinic.clinicName.trim() || clinic.phone.trim();
     if (!hasEnteredSomething) return;
     function onBeforeUnload(e: BeforeUnloadEvent) {
       e.preventDefault();
@@ -104,19 +163,22 @@ export function OnboardingWizard({
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [step, aboutYou.name, clinicDraft.clinicName, clinicDraft.phone]);
+  }, [step, aboutYou.fullName, clinic.clinicName, clinic.phone]);
 
   async function handleCreateClinic() {
     setCreating(true);
     setCreateError(null);
     try {
-      const title = aboutYou.role === "dentist" ? "Owner · Dentist" : "Owner · Staff";
       await createClinicWithOwner({
-        name: clinicDraft.clinicName.trim(),
-        slug: slugify(clinicDraft.clinicName),
-        fullName: aboutYou.name.trim(),
-        phone: clinicDraft.phone,
-        title,
+        name: clinic.clinicName.trim(),
+        slug: slugify(clinic.clinicName),
+        fullName: aboutYou.fullName.trim(),
+        // The OWNER's own mobile from "About you". This used to be handed
+        // the clinic's phone from step 2, which meant profiles.phone and
+        // clinics.phone were always the same number and the person's real
+        // mobile was never collected at all.
+        phone: normalizePhone(aboutYou.mobile),
+        title: aboutYou.title.trim() || DEFAULT_TITLE,
       });
       // clinicSettings (address/city/phone) stays local/mock-backed this
       // phase — see state/clinicData.tsx's file header. ClinicDataProvider
@@ -125,10 +187,15 @@ export function OnboardingWizard({
       // instead of a direct updateClinicSettings() call.
       if (user) {
         saveClinicDetailsDraft(user.id, {
-          phone: clinicDraft.phone,
-          address: clinicDraft.address.trim(),
-          city: clinicDraft.city.trim(),
+          // Normalized here for the same reason updateProfile does it: every
+          // other write path stores "+91XXXXXXXXXX", and onboarding was the
+          // one place putting bare local digits into the column.
+          phone: normalizePhone(clinic.phone),
+          address: clinic.address.trim(),
+          city: clinic.city.trim(),
         });
+        // The clinic exists now, so a resumable draft would only be stale.
+        clearWizardDraft(user.id);
       }
       await refresh();
       setStep(3);
@@ -164,14 +231,15 @@ export function OnboardingWizard({
           {step === 1 && (
             <StepAboutYou
               draft={aboutYou}
+              email={user?.email ?? ""}
               onChange={setAboutYou}
               onContinue={() => setStep(2)}
             />
           )}
           {step === 2 && (
             <StepClinic
-              draft={clinicDraft}
-              onChange={setClinicDraft}
+              draft={clinic}
+              onChange={setClinic}
               onBack={() => setStep(1)}
               onContinue={() => void handleCreateClinic()}
               submitting={creating}
@@ -179,7 +247,7 @@ export function OnboardingWizard({
             />
           )}
           {step === 3 && <StepFeatureIntro onContinue={() => setStep(4)} />}
-          {step === 4 && <StepCompletion clinicName={clinicDraft.clinicName} onFinish={onFinish} />}
+          {step === 4 && <StepCompletion clinicName={clinic.clinicName} onFinish={onFinish} />}
         </div>
       </div>
     </div>

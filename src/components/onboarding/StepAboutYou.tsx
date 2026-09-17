@@ -9,14 +9,19 @@ import { uploadAvatarPhoto } from "../../services/clinic";
 import { cn, initials, getErrorMessage } from "../../lib/utils";
 import { useSignedMediaUrl } from "../../lib/signedMedia";
 import { validateImageFile, ACCEPTED_IMAGE_ACCEPT } from "../../lib/imageCrop";
+import { PhoneInput } from "../ui/PhoneInput";
+import { isValidIndianMobile } from "../../lib/phone";
 import { fieldInputClass, fieldLabelClass } from "./fieldStyles";
-import type { AboutYouDraft, ClinicRoleChoice } from "./OnboardingWizard";
+import type { AboutYouDraft } from "./OnboardingWizard";
 
 const AVATAR_BUCKET = "avatars";
 
-const roleOptions: { value: ClinicRoleChoice; label: string; icon: typeof Stethoscope }[] = [
-  { value: "dentist", label: "Dentist", icon: Stethoscope },
-  { value: "staff", label: "Staff", icon: UserCircle2 },
+/** Quick ways to fill the Professional title field below. They write into
+ * `title` rather than into a separate `role` value, so the title is the only
+ * thing this step tracks and there is nothing to keep in sync. */
+const titlePresets: { label: string; title: string; icon: typeof Stethoscope }[] = [
+  { label: "Dentist", title: "Owner · Dentist", icon: Stethoscope },
+  { label: "Staff", title: "Owner · Staff", icon: UserCircle2 },
 ];
 
 /** Uses the same production upload+crop+persist flow as Settings > Account
@@ -30,16 +35,24 @@ const roleOptions: { value: ClinicRoleChoice; label: string; icon: typeof Stetho
  * initials, same as everywhere else in the app. */
 export function StepAboutYou({
   draft,
+  email,
   onChange,
   onContinue,
 }: {
   draft: AboutYouDraft;
+  /** From the signed-in account — shown, never typed. */
+  email: string;
   onChange: (draft: AboutYouDraft) => void;
   onContinue: () => void;
 }) {
   const { profile, refresh } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const canContinue = draft.name.trim().length > 0;
+  const canContinue =
+    draft.fullName.trim().length > 0 &&
+    isValidIndianMobile(draft.mobile) &&
+    draft.title.trim().length > 0;
+  const mobileTouched = draft.mobile.trim().length > 0;
+  const mobileInvalid = mobileTouched && !isValidIndianMobile(draft.mobile);
 
   const avatarPhotoUrl = useSignedMediaUrl(AVATAR_BUCKET, profile?.avatar_path);
   const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
@@ -79,6 +92,11 @@ export function StepAboutYou({
       <p className="mt-2 max-w-sm text-[13.5px] leading-relaxed text-[var(--color-muted)]">
         Tell us a little about yourself so Healvo can personalize your workspace.
       </p>
+      {email && (
+        <p className="mt-1.5 text-[12.5px] text-[var(--color-muted-soft)]">
+          Signed in as <span className="font-semibold text-[var(--color-muted)]">{email}</span>
+        </p>
+      )}
 
       <div className="mt-8 flex items-center gap-4">
         <button
@@ -87,7 +105,7 @@ export function StepAboutYou({
           disabled={uploadingPhoto}
           className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[var(--color-border)] outline-none disabled:cursor-not-allowed"
         >
-          <Avatar initials={initials(draft.name || "?") || "?"} photoUrl={avatarPhotoUrl} size={56} />
+          <Avatar initials={initials(draft.fullName || "?") || "?"} photoUrl={avatarPhotoUrl} size={56} />
           <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
             <Camera size={15} strokeWidth={2.25} />
           </span>
@@ -133,37 +151,67 @@ export function StepAboutYou({
 
       <div className="mt-8 space-y-5">
         <label className="block">
-          <span className={fieldLabelClass}>Name</span>
+          <span className={fieldLabelClass}>Full name</span>
           <input
             required
             autoFocus
-            value={draft.name}
-            onChange={(e) => onChange({ ...draft, name: e.target.value })}
+            autoComplete="name"
+            value={draft.fullName}
+            onChange={(e) => onChange({ ...draft, fullName: e.target.value })}
             placeholder="Dr. Priya Nair"
             className={fieldInputClass}
           />
         </label>
 
+        <label className="block">
+          <span className={fieldLabelClass}>Mobile number</span>
+          <PhoneInput
+            value={draft.mobile}
+            onChange={(mobile) => onChange({ ...draft, mobile })}
+            size="md"
+            autoComplete="tel-national"
+            aria-invalid={mobileInvalid}
+            className="mt-1.5"
+          />
+          {mobileInvalid ? (
+            <p className="mt-1.5 text-[11.5px] font-semibold text-[var(--color-danger-text)]">
+              Enter a 10-digit Indian mobile number.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[11.5px] text-[var(--color-muted-soft)]">
+              Your own number, so your team can reach you. Your clinic&apos;s number comes next.
+            </p>
+          )}
+        </label>
+
         <div>
-          <span className={fieldLabelClass}>Role</span>
+          <span className={fieldLabelClass}>Professional title</span>
           <div className="mt-2 grid grid-cols-2 gap-2.5">
-            {roleOptions.map((option) => (
+            {titlePresets.map((preset) => (
               <button
-                key={option.value}
+                key={preset.title}
                 type="button"
-                onClick={() => onChange({ ...draft, role: option.value })}
+                onClick={() => onChange({ ...draft, title: preset.title })}
                 className={cn(
                   "flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-left text-[13.5px] font-semibold transition-colors",
-                  draft.role === option.value
+                  draft.title.trim() === preset.title
                     ? "border-transparent bg-[var(--color-teal)] text-white"
                     : "border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-ink)] hover:bg-[var(--color-canvas)]",
                 )}
               >
-                <option.icon size={16} strokeWidth={2.25} />
-                {option.label}
+                <preset.icon size={16} strokeWidth={2.25} />
+                {preset.label}
               </button>
             ))}
           </div>
+          <input
+            required
+            value={draft.title}
+            onChange={(e) => onChange({ ...draft, title: e.target.value })}
+            placeholder="e.g. Owner · Dentist"
+            aria-label="Professional title"
+            className={cn(fieldInputClass, "mt-2.5")}
+          />
         </div>
       </div>
 

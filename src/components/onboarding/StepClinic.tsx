@@ -50,7 +50,8 @@ export function StepClinic({
 
       <h1 className="text-[23px] font-extrabold tracking-tight text-[var(--color-ink)]">Set up your clinic</h1>
       <p className="mt-2 max-w-sm text-[13.5px] leading-relaxed text-[var(--color-muted)]">
-        Create your clinic workspace. You can change these details later.
+        Just the clinic itself — we already have your details. You can change any of
+        this later.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -71,13 +72,17 @@ export function StepClinic({
         </label>
 
         <label className="block">
-          <span className={fieldLabelClass}>Phone</span>
+          <span className={fieldLabelClass}>Clinic phone</span>
           <PhoneInput
             value={draft.phone}
             onChange={(phone) => onChange({ ...draft, phone })}
             size="md"
+            autoComplete="tel-national"
             className="mt-1.5"
           />
+          <p className="mt-1.5 text-[11.5px] text-[var(--color-muted-soft)]">
+            The number patients call. Your personal mobile stays on your profile.
+          </p>
         </label>
 
         <label className="block">
