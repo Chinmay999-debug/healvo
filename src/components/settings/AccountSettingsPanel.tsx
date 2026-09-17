@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { LogOut } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Avatar } from "../ui/Avatar";
@@ -237,14 +238,13 @@ export function AccountSettingsPanel() {
 
       <Card className="p-5">
         <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Account</h2>
+        <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
+          You'll need to log in again to get back into your clinic.
+        </p>
         <div className="mt-4">
-          <Button
-            variant="outline"
-            type="button"
-            className="text-[var(--color-amber-text)]"
-            onClick={() => void signOut()}
-          >
-            Sign out
+          <Button variant="danger" type="button" onClick={() => void signOut()}>
+            <LogOut size={14} strokeWidth={2} />
+            Log out
           </Button>
         </div>
       </Card>

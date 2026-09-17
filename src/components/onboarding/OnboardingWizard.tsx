@@ -150,7 +150,7 @@ export function OnboardingWizard({
               onClick={() => void signOut()}
               className="text-[12.5px] font-semibold text-[var(--color-muted)] transition-colors hover:text-[var(--color-ink)]"
             >
-              Sign out
+              Log out
             </button>
           )}
         </div>

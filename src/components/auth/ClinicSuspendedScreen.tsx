@@ -83,7 +83,7 @@ export function ClinicSuspendedScreen({
               onClick={() => signOut()}
             >
               <LogOut className="mr-2 h-4 w-4" />
-              Sign out
+              Log out
             </Button>
           </div>
         </div>
