@@ -1,3 +1,5 @@
+import { supabase } from "../../lib/supabaseClient";
+
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import { Logo } from "../ui/Logo";
@@ -199,6 +201,13 @@ export function OnboardingWizard({
         clearWizardDraft(user.id);
       }
       await refresh();
+      // Trigger the welcome email securely via Edge Function
+      supabase.functions.invoke("welcome-email", {
+        body: { clinicId: newClinic.id }
+      }).catch(err => {
+        // Log but do not block the user if the welcome email fails
+        console.error("Failed to send welcome email:", err);
+      });
       setStep(3);
     } catch (err) {
       setCreateError(getErrorMessage(err, "Could not create your clinic."));
