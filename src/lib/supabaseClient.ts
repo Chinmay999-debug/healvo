@@ -5,7 +5,7 @@ const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!url || !publishableKey) {
   throw new Error(
-    "Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY. Set them in .env (see .env.example) — never put a service-role/secret key here, only the publishable/anon key.",
+    "Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY. Set them in .env (see .env.example). Never put a service-role/secret key here, only the publishable/anon key.",
   );
 }
 

@@ -48,7 +48,7 @@ export function Tooth({
       className="group cursor-pointer outline-none"
       tabIndex={0}
       role="button"
-      aria-label={`Tooth ${meta.fdi} — ${status.replace("-", " ")}`}
+      aria-label={`Tooth ${meta.fdi}, ${status.replace("-", " ")}`}
       aria-pressed={selected}
       onClick={() => onSelect(meta.fdi)}
       onKeyDown={handleKeyDown}

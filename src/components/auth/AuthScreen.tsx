@@ -82,7 +82,7 @@ function BrandPanel() {
           Run your entire clinic from one calm dashboard.
         </h2>
         <p className="mt-3 text-[14.5px] leading-relaxed text-white/80">
-          Patients, appointments, consultations and billing — Healvo keeps your
+          Patients, appointments, consultations and billing. Healvo keeps your
           front desk and chairside teams on the same page.
         </p>
 

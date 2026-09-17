@@ -225,7 +225,7 @@ export default function Overview() {
             <LoadingState />
           ) : recentActivity.length === 0 ? (
             <p className="py-8 text-center text-[13px] text-[var(--color-muted)]">
-              Nothing to show yet — activity will appear here as it happens.
+              Nothing to show yet. Activity will appear here as it happens.
             </p>
           ) : (
             <div className="mt-2">

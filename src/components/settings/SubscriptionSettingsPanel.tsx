@@ -179,7 +179,7 @@ export function SubscriptionSettingsPanel() {
         caption: (
           <>
             Every Healvo feature is unlocked. Your trial ends on{" "}
-            <strong className="font-semibold text-white">{endDate}</strong> — pick a plan below before then
+            <strong className="font-semibold text-white">{endDate}</strong>. Pick a plan below before then
             to keep going without a break.
           </>
         ),
@@ -206,7 +206,7 @@ export function SubscriptionSettingsPanel() {
             title: `${planName} plan`,
             caption: (
               <>
-                Renews on its own — next payment of {recurringPrice} on{" "}
+                Renews on its own. Next payment of {recurringPrice} on{" "}
                 <strong className="font-semibold text-white">{nextPaymentDate}</strong>.
               </>
             ),
@@ -255,7 +255,7 @@ export function SubscriptionSettingsPanel() {
     : renewalCompleted
       ? "Your automatic renewal has ended. Turn it back on below to keep your plan."
       : paymentDue
-        ? `Your ${endDate} payment didn't go through. We'll retry automatically — nothing to do right now.`
+        ? `Your ${endDate} payment didn't go through. We'll retry automatically, so there's nothing to do right now.`
         : null;
 
   const plansHeading = autoRenewOn ? "Change plan" : mode === "renew" ? "Renew your plan" : "Choose a plan";

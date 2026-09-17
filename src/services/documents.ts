@@ -127,7 +127,7 @@ export async function uploadDocument(
     const { error: cleanupError } = await supabase.storage.from(BUCKET).remove([storagePath]);
     if (cleanupError) {
       console.error(
-        "Document row insert failed and Storage cleanup also failed — orphaned object at",
+        "Document row insert failed and Storage cleanup also failed. Orphaned object at",
         storagePath,
         cleanupError,
       );

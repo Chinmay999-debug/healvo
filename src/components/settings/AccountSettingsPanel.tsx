@@ -173,7 +173,7 @@ export function AccountSettingsPanel() {
               className={cn(inputClass, "cursor-not-allowed opacity-70")}
             />
             <p className="mt-1.5 text-[11.5px] text-[var(--color-muted-soft)]">
-              Managed by your sign-in — contact support to change it.
+              Managed by your sign-in. Contact support to change it.
             </p>
           </Field>
           <Field label="Phone" required>

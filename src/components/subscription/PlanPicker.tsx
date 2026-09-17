@@ -163,7 +163,7 @@ export function PlanPicker({
       tagline: "The whole year sorted, in one payment",
       priceNote: `About ${formatPriceINR(perMonthPaise)} a month`,
       highlights: [
-        `${monthsOfAccess(annual.accessMonths)} — pay for 12, get 2 free`,
+        `${monthsOfAccess(annual.accessMonths)}, pay for 12 and get 2 free`,
         "One payment, nothing renews on its own",
       ],
       action: { label: annualLabel(), disabled: false } as { label: string; disabled: boolean; note?: string },

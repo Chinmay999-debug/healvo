@@ -80,5 +80,5 @@ export function formatDentalLine(
 export function formatFollowUpLine(consultation: Consultation): string | null {
   if (!consultation.followUpRequired) return null;
   const parts = [consultation.followUpWhen, consultation.followUpRecommendation].filter(Boolean);
-  return parts.length > 0 ? parts.join(" — ") : "Follow-up recommended";
+  return parts.length > 0 ? parts.join(" · ") : "Follow-up recommended";
 }

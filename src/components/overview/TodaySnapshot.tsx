@@ -81,7 +81,7 @@ export function TodaySnapshot() {
         <div className="mt-2.5">
           {active.length === 0 && (
             <p className="mb-1 text-[11.5px] font-semibold tracking-[0.02em] text-[var(--color-muted)] uppercase">
-              All visits completed — today's recap
+              All visits completed · today's recap
             </p>
           )}
           {displayVisits.map((visit, i) => {

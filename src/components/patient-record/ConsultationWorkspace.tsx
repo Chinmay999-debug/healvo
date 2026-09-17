@@ -194,7 +194,7 @@ export function ConsultationWorkspace() {
           </div>
         ) : (
           <div className="text-[12.5px] font-semibold text-[var(--color-muted)]">
-            No active visit today — this consultation will be linked to the patient only.
+            No active visit today, so this consultation will be linked to the patient only.
           </div>
         )}
       </div>
