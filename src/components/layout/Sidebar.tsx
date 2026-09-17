@@ -12,6 +12,10 @@ import {
   PanelLeftOpen,
   LogOut,
   CreditCard,
+  AlertTriangle,
+  BadgeCheck,
+  CalendarClock,
+  Sparkles,
 } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import { Logo } from "../ui/Logo";
@@ -22,12 +26,41 @@ import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
 import { useClinicData } from "../../state/clinicData";
 import { useSignedMediaUrl } from "../../lib/signedMedia";
-import { planDisplayName } from "../../services/subscription";
+import {
+  formatAccessDate,
+  getAccessProgress,
+  getAccessWindow,
+  planDisplayName,
+} from "../../services/subscription";
 
 const AVATAR_BUCKET = "avatars";
 
-/** Compact, always-clickable plan status under the account row. Amber only
- * when action is due (trial, or a plan within 7 days of ending). */
+const PLAN_TONES = {
+  mint: {
+    chip: "bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]",
+    pill: "bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]",
+    track: "bg-[var(--color-mint-text)]/20",
+    fill: "bg-[var(--color-mint-text)]",
+  },
+  blue: {
+    chip: "bg-[var(--color-blue-bg)] text-[var(--color-blue-text)]",
+    pill: "bg-[var(--color-blue-bg)] text-[var(--color-blue-text)]",
+    track: "bg-[var(--color-blue-text)]/20",
+    fill: "bg-[var(--color-blue-text)]",
+  },
+  amber: {
+    chip: "bg-[var(--color-amber-bg)] text-[var(--color-amber-text)]",
+    pill: "bg-[var(--color-amber-bg)] text-[var(--color-amber-text)]",
+    track: "bg-[var(--color-amber-text)]/20",
+    fill: "bg-[var(--color-amber-text)]",
+  },
+} as const;
+
+/**
+ * The clinic's plan at a glance, always clickable through to Settings →
+ * Subscription & Plan. Tone carries the meaning: mint once a plan is paid
+ * for, blue during the trial, amber only when something is actually due.
+ */
 function SubscriptionIndicator({
   collapsed,
   onNavigate,
@@ -35,24 +68,61 @@ function SubscriptionIndicator({
   collapsed: boolean;
   onNavigate?: () => void;
 }) {
-  const { isTrial, isActive, inGrace, autoRenew, daysRemaining, activePlan } = useSubscription();
+  const { subscription, isTrial, isActive, inGrace, autoRenew, daysRemaining, endsAt, activePlan } =
+    useSubscription();
   if (!isTrial && !isActive && !inGrace) return null;
 
-  const annual = activePlan?.interval === "year";
-  const needsAttention = isTrial || inGrace || (!autoRenew && daysRemaining <= 7);
-  const label = isTrial ? "Free trial" : planDisplayName(activePlan?.interval);
-  const status = isTrial
-    ? `${daysRemaining}d left`
-    : inGrace
-      ? "Payment due"
-      : autoRenew
-        ? "Auto-renews"
-        : daysRemaining <= 7
-          ? `Ends in ${daysRemaining}d`
-          : annual
-            ? "One-time"
-            : "Active";
-  const title = `${label} · ${isTrial ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left` : status}`;
+  const endingSoon = isActive && !autoRenew && daysRemaining <= 7;
+  const planLabel = `${planDisplayName(activePlan?.interval)} plan`;
+  const endLabel = endsAt ? formatAccessDate(endsAt, false) : null;
+
+  const state = inGrace
+    ? {
+        tone: "amber" as const,
+        icon: AlertTriangle,
+        label: planLabel,
+        pill: "Payment due",
+        detail: "We'll retry automatically",
+        showBar: false,
+      }
+    : isTrial
+      ? {
+          tone: "blue" as const,
+          icon: Sparkles,
+          label: "Free trial",
+          pill: `${daysRemaining}d left`,
+          detail: endLabel ? `Ends ${endLabel}` : "Choose a plan to continue",
+          showBar: true,
+        }
+      : endingSoon
+        ? {
+            tone: "amber" as const,
+            icon: CalendarClock,
+            label: planLabel,
+            pill: `${daysRemaining}d left`,
+            detail: endLabel ? `Renew by ${endLabel}` : "Renew to keep access",
+            showBar: true,
+          }
+        : {
+            tone: "mint" as const,
+            icon: BadgeCheck,
+            label: planLabel,
+            pill: "Active",
+            detail: autoRenew
+              ? endLabel
+                ? `Renews ${endLabel}`
+                : "Renews automatically"
+              : endLabel
+                ? `Paid through ${endLabel}`
+                : "Paid",
+            showBar: false,
+          };
+
+  const palette = PLAN_TONES[state.tone];
+  const Icon = state.icon;
+  const title = `${state.label} · ${state.detail}`;
+  const window = getAccessWindow(subscription);
+  const remaining = window ? Math.max(3, 100 - getAccessProgress(window)) : 0;
 
   return (
     <Link
@@ -61,29 +131,51 @@ function SubscriptionIndicator({
       title={title}
       aria-label={title}
       className={cn(
-        "mt-2.5 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] transition-colors hover:bg-[var(--color-canvas)]",
-        collapsed && "justify-center px-0",
+        "mt-3 block rounded-xl border border-[var(--color-border)] bg-[var(--color-canvas)] outline-none transition-colors hover:border-[var(--color-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]/50",
+        collapsed ? "flex justify-center p-2" : "p-2.5",
       )}
     >
-      <span
-        className={cn(
-          "h-2 w-2 shrink-0 rounded-full",
-          needsAttention ? "bg-[var(--color-amber-text)]" : "bg-[var(--color-mint-text)]",
-        )}
-      />
-      {!collapsed && (
+      {collapsed ? (
+        <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", palette.chip)}>
+          <Icon size={15} strokeWidth={2.25} />
+        </span>
+      ) : (
         <>
-          <span className="min-w-0 flex-1 truncate font-semibold text-[var(--color-ink)]">{label}</span>
-          <span
-            className={cn(
-              "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
-              needsAttention
-                ? "bg-[var(--color-amber-bg)] text-[var(--color-amber-text)]"
-                : "bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]",
-            )}
-          >
-            {status}
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                palette.chip,
+              )}
+            >
+              <Icon size={15} strokeWidth={2.25} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] font-bold text-[var(--color-ink)]">
+              {state.label}
+            </span>
+            <span
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold whitespace-nowrap",
+                palette.pill,
+              )}
+            >
+              {state.pill}
+            </span>
+          </div>
+
+          {state.showBar && window && (
+            <span
+              aria-hidden="true"
+              className={cn("mt-2 block h-1 overflow-hidden rounded-full", palette.track)}
+            >
+              <span
+                className={cn("block h-full rounded-full", palette.fill)}
+                style={{ width: `${remaining}%` }}
+              />
+            </span>
+          )}
+
+          <p className="mt-1.5 truncate text-[11px] text-[var(--color-muted)]">{state.detail}</p>
         </>
       )}
     </Link>
