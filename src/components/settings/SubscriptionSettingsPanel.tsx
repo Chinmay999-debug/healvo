@@ -1,14 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CreditCard,
+  FileText,
+  ReceiptText,
+  RefreshCw,
+  RotateCcw,
+} from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge, type BadgeTone } from "../ui/Badge";
 import { MONTHLY_PLAN_CODE, PlanPicker } from "../subscription/PlanPicker";
 import { CheckoutOutcomeBanner } from "../subscription/CheckoutOutcomeBanner";
+import { PlanStatusHero, type PlanTone } from "../subscription/PlanStatusHero";
 import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
 import { useSubscriptionCheckout } from "../../state/useSubscriptionCheckout";
-import { cn } from "../../lib/utils";
 import {
   formatAccessDate,
   formatPriceINR,
@@ -28,58 +36,63 @@ const INVOICE_TONES: Record<PlatformInvoiceStatus, BadgeTone> = {
   uncollectible: "slate",
 };
 
-const BAR_FILL: Record<"trial" | "active" | "ending" | "expired", string> = {
-  trial: "bg-[var(--color-blue-text)]",
-  active: "bg-[var(--color-mint-text)]",
-  ending: "bg-[var(--color-amber-text)]",
-  expired: "bg-[var(--color-muted-soft)]",
-};
+const MONTHLY_FALLBACK_PAISE = 49900;
 
-function AccessProgress({
-  startsAt,
-  endsAt,
-  percent,
-  fill,
-  startLabel,
-  endLabel,
+/** The one section header used across this page's cards. */
+function SectionHeader({
+  title,
+  subtitle,
+  action,
 }: {
-  startsAt: Date;
-  endsAt: Date;
-  percent: number;
-  fill: string;
-  startLabel: string;
-  endLabel: string;
+  title: string;
+  subtitle: string;
+  action?: ReactNode;
 }) {
-  // Years only when the window crosses one (e.g. a 14-month annual plan).
-  const withYear = startsAt.getFullYear() !== endsAt.getFullYear();
-
   return (
-    <div className="mt-4">
-      <div
-        role="progressbar"
-        aria-label="Time used in this period"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(percent)}
-        className="h-2 overflow-hidden rounded-full bg-[var(--color-slate-bg)]"
-      >
-        {/* A small minimum keeps a just-started period from reading as an empty track. */}
-        <div className={cn("h-full min-w-2 rounded-full", fill)} style={{ width: `${percent}%` }} />
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="text-[15.5px] font-extrabold tracking-tight text-[var(--color-ink)]">{title}</h2>
+        <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-muted)]">{subtitle}</p>
       </div>
-      <div className="mt-2 flex justify-between gap-3 text-[12px]">
-        <div>
-          <div className="text-[var(--color-muted)]">{startLabel}</div>
-          <div className="font-semibold whitespace-nowrap text-[var(--color-ink)]">
-            {formatAccessDate(startsAt, withYear)}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-[var(--color-muted)]">{endLabel}</div>
-          <div className="font-semibold whitespace-nowrap text-[var(--color-ink)]">
-            {formatAccessDate(endsAt, withYear)}
-          </div>
-        </div>
-      </div>
+      {action}
+    </div>
+  );
+}
+
+function AttentionCard({ message }: { message: string }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-xl border border-[var(--color-amber-text)]/25 bg-[var(--color-amber-bg)] px-4 py-3.5"
+    >
+      <AlertTriangle
+        size={16}
+        strokeWidth={2.25}
+        className="mt-px shrink-0 text-[var(--color-amber-text)]"
+      />
+      <p className="text-[13px] leading-relaxed font-semibold text-[var(--color-amber-text)]">
+        {message}
+      </p>
+    </div>
+  );
+}
+
+function ManageRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof RefreshCw;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <dt className="flex items-center gap-2.5 text-[13px] text-[var(--color-muted)]">
+        <Icon size={15} strokeWidth={2} className="shrink-0 text-[var(--color-muted-soft)]" />
+        {label}
+      </dt>
+      <dd className="text-[13px] font-bold text-[var(--color-ink)] tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -103,7 +116,6 @@ export function SubscriptionSettingsPanel() {
   const [invoices, setInvoices] = useState<PlatformInvoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [invoicesError, setInvoicesError] = useState(false);
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const loadInvoices = useCallback(async () => {
     if (!clinicId) return;
@@ -148,63 +160,103 @@ export function SubscriptionSettingsPanel() {
   const nextPaymentDate = formatAccessDate(billing?.next_charge_at ?? billing?.gateway_start_at ?? endsAt ?? new Date());
   const planName = planDisplayName(subscription?.plan_interval);
   const methodName = paymentMethodName(billing?.payment_method ?? null);
+  const recurringPrice = formatPriceINR(subscription?.base_price_paise ?? MONTHLY_FALLBACK_PAISE);
   const monthlyLocked =
     recurringMonthly && hasPaidAccess && subscription?.plan_interval === "year" && !billing?.annual_to_monthly_eligible && !autoRenewOn;
 
-  const status = isTrial
+  const status: {
+    tone: PlanTone;
+    label: string;
+    title: string;
+    caption: ReactNode;
+    endLabel: string;
+    endValue: string;
+  } = isTrial
     ? {
-        badge: { tone: "blue" as BadgeTone, label: "Free trial" },
+        tone: "trial",
+        label: "Free trial",
         title: `${subscription?.trial_days ?? 7}-day free trial`,
-        endLine: <>Trial ends on <strong className="font-semibold text-[var(--color-ink)]">{endDate}</strong></>,
-        barStart: "Trial started",
-        barEnd: "Trial ends",
-        fill: BAR_FILL.trial,
+        caption: (
+          <>
+            Every Healvo feature is unlocked. Your trial ends on{" "}
+            <strong className="font-semibold text-white">{endDate}</strong> — pick a plan below before then
+            to keep going without a break.
+          </>
+        ),
+        endLabel: "Trial ends",
+        endValue: endDate,
       }
     : paymentDue || halted
       ? {
-          badge: { tone: "amber" as BadgeTone, label: halted ? "Action needed" : "Payment due" },
+          tone: "attention",
+          label: halted ? "Action needed" : "Payment due",
           title: `${planName} plan`,
-          endLine: <>Paid through <strong className="font-semibold text-[var(--color-ink)]">{endDate}</strong></>,
-          barStart: "Started",
-          barEnd: "Paid through",
-          fill: BAR_FILL.ending,
+          caption: (
+            <>
+              Paid through <strong className="font-semibold text-white">{endDate}</strong>.
+            </>
+          ),
+          endLabel: "Paid through",
+          endValue: endDate,
         }
       : hasPaidAccess && autoRenewOn
         ? {
-            badge: { tone: "mint" as BadgeTone, label: "Auto-renews" },
+            tone: "active",
+            label: "Auto-renews",
             title: `${planName} plan`,
-            endLine: (
+            caption: (
               <>
-                Next payment {formatPriceINR(49900)} on{" "}
-                <strong className="font-semibold text-[var(--color-ink)]">{nextPaymentDate}</strong>
+                Renews on its own — next payment of {recurringPrice} on{" "}
+                <strong className="font-semibold text-white">{nextPaymentDate}</strong>.
               </>
             ),
-            barStart: "Started",
-            barEnd: "Next payment",
-            fill: BAR_FILL.active,
+            endLabel: "Next payment",
+            endValue: nextPaymentDate,
           }
         : hasPaidAccess
           ? {
-              badge: autoRenewOff
-                ? { tone: "slate" as BadgeTone, label: "Auto-renewal off" }
-                : endingSoon
-                  ? { tone: "amber" as BadgeTone, label: "Ending soon" }
-                  : { tone: "mint" as BadgeTone, label: "Active" },
+              tone: endingSoon ? "attention" : "active",
+              label: autoRenewOff ? "Auto-renewal off" : endingSoon ? "Ending soon" : "Active",
               title: `${planName} plan`,
               // One-time plans never renew by themselves, so the date is phrased as a deadline.
-              endLine: <>Renew by <strong className="font-semibold text-[var(--color-ink)]">{endDate}</strong></>,
-              barStart: "Started",
-              barEnd: "Renew by",
-              fill: endingSoon ? BAR_FILL.ending : BAR_FILL.active,
+              caption: (
+                <>
+                  This plan doesn't renew on its own. Renew by{" "}
+                  <strong className="font-semibold text-white">{endDate}</strong> to keep your clinic running.
+                </>
+              ),
+              endLabel: "Renew by",
+              endValue: endDate,
             }
           : {
-              badge: { tone: "slate" as BadgeTone, label: "Expired" },
+              tone: "expired",
+              label: "Expired",
               title: "Plan expired",
-              endLine: null,
-              barStart: "Started",
-              barEnd: "Ended",
-              fill: BAR_FILL.expired,
+              caption: halted
+                ? "Automatic payments stopped. Update your payment method to continue."
+                : "Your clinic access is paused. Choose a plan below and everything will be exactly where you left it.",
+              endLabel: "Ended",
+              endValue: endDate,
             };
+
+  const facts: { label: string; value: string }[] = [];
+  if (accessWindow) {
+    facts.push({ label: isTrial ? "Trial started" : "Started", value: formatAccessDate(accessWindow.startsAt) });
+  }
+  if (status.endValue) {
+    facts.push({ label: status.endLabel, value: status.endValue });
+  }
+  if (methodName && facts.length < 3) {
+    facts.push({ label: "Payment method", value: methodName });
+  }
+
+  const attention = halted
+    ? "Automatic payments stopped. Update your payment method to start them again."
+    : renewalCompleted
+      ? "Your automatic renewal has ended. Turn it back on below to keep your plan."
+      : paymentDue
+        ? `Your ${endDate} payment didn't go through. We'll retry automatically — nothing to do right now.`
+        : null;
 
   const plansHeading = autoRenewOn ? "Change plan" : mode === "renew" ? "Renew your plan" : "Choose a plan";
   const plansSubtitle = autoRenewOn
@@ -215,151 +267,47 @@ export function SubscriptionSettingsPanel() {
         ? `Anything you add starts after ${endDate}, so you don't lose any days.`
         : "Choose a plan to restore your clinic's access.";
 
-  const busy = checkout.phase !== "idle";
-
-  async function handleConfirmCancel() {
-    const cancelled = await checkout.cancelAutoRenew();
-    if (cancelled) setConfirmingCancel(false);
-  }
-
   return (
-    <div className="space-y-6">
-      <Card className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[12.5px] font-semibold text-[var(--color-muted)]">Your Healvo plan</p>
-            <h2 className="mt-0.5 truncate text-[16px] font-bold text-[var(--color-ink)]">
-              {activeClinic?.name}
-            </h2>
-          </div>
-          <Badge tone={status.badge.tone} className="shrink-0">
-            {status.badge.label}
-          </Badge>
-        </div>
+    <div className="space-y-5">
+      <PlanStatusHero
+        clinicName={activeClinic?.name ?? "Your clinic"}
+        statusLabel={status.label}
+        tone={status.tone}
+        title={status.title}
+        caption={status.caption}
+        daysRemaining={daysRemaining}
+        percentUsed={accessWindow ? (expired ? 100 : getAccessProgress(accessWindow)) : null}
+        facts={facts}
+      />
 
-        <div className="mt-4 rounded-lg border border-[var(--color-border)] p-4">
-          <div className="text-[13.5px] font-bold text-[var(--color-ink)]">{status.title}</div>
+      {checkout.outcome && (
+        <CheckoutOutcomeBanner outcome={checkout.outcome} onDismiss={checkout.dismissOutcome} />
+      )}
 
-          {expired ? (
-            <p className="mt-1 text-[13px] text-[var(--color-muted)]">
-              {halted ? "Automatic payments stopped." : "Your clinic access is paused."}
-              <br />
-              {halted ? "Update your payment method to continue." : "Choose a plan to continue."}
-            </p>
-          ) : (
-            <div className="mt-1.5 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[32px] leading-none font-bold text-[var(--color-ink)] tabular-nums">
-                  {daysRemaining}
-                </span>
-                <span className="text-[13px] text-[var(--color-muted)]">
-                  {daysRemaining === 1 ? "day" : "days"} remaining
-                </span>
-              </div>
-              {status.endLine && <p className="text-[13px] text-[var(--color-muted)]">{status.endLine}</p>}
-            </div>
-          )}
-
-          {accessWindow && (
-            <AccessProgress
-              startsAt={accessWindow.startsAt}
-              endsAt={accessWindow.endsAt}
-              percent={expired ? 100 : getAccessProgress(accessWindow)}
-              fill={status.fill}
-              startLabel={status.barStart}
-              endLabel={status.barEnd}
-            />
-          )}
-
-          {(paymentDue || halted || renewalCompleted) && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-amber-bg)] px-3.5 py-3">
-              <p className="text-[13px] font-semibold text-[var(--color-amber-text)]">
-                {halted
-                  ? "Automatic payments stopped. Update your payment method."
-                  : renewalCompleted
-                    ? "Your automatic renewal has ended. Turn it back on to keep your plan."
-                    : `Your ${endDate} payment didn't go through. We'll retry automatically.`}
-              </p>
-              {(halted || renewalCompleted) && recurringMonthly && (
-                <Button variant="outline" disabled={busy} onClick={() => void checkout.startCheckout(MONTHLY_PLAN_CODE)}>
-                  {halted ? "Update payment method" : "Turn on auto-renewal"}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {autoRenewOff && !renewalCompleted && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-[13px] text-[var(--color-muted)]">Auto-renewal off</p>
-              <Button variant="outline" disabled={busy} onClick={() => void checkout.startCheckout(MONTHLY_PLAN_CODE)}>
-                Turn auto-renewal back on
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {checkout.outcome && (
-          <div className="mt-4">
-            <CheckoutOutcomeBanner outcome={checkout.outcome} onDismiss={checkout.dismissOutcome} />
-          </div>
-        )}
-      </Card>
+      {attention && <AttentionCard message={attention} />}
 
       {autoRenewOn && (
         <Card className="p-5">
-          <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Manage subscription</h2>
-          <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-            {formatPriceINR(49900)} / month, charged automatically.
-          </p>
+          <SectionHeader
+            title="Manage subscription"
+            subtitle={`${recurringPrice} a month, charged automatically to your saved method.`}
+          />
 
-          <dl className="mt-4 divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] text-[13px]">
-            <div className="flex items-center justify-between gap-3 px-4 py-3">
-              <dt className="text-[var(--color-muted)]">Automatic renewal</dt>
-              <dd className="font-semibold text-[var(--color-ink)]">On</dd>
-            </div>
-            <div className="flex items-center justify-between gap-3 px-4 py-3">
-              <dt className="text-[var(--color-muted)]">Next payment</dt>
-              <dd className="font-semibold text-[var(--color-ink)]">{nextPaymentDate}</dd>
-            </div>
-            {methodName && (
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <dt className="text-[var(--color-muted)]">Payment method</dt>
-                <dd className="font-semibold text-[var(--color-ink)]">{methodName}</dd>
-              </div>
-            )}
+          <dl className="mt-4 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)]">
+            <ManageRow icon={RefreshCw} label="Automatic renewal" value="On" />
+            <ManageRow icon={CalendarClock} label="Next payment" value={nextPaymentDate} />
+            {methodName && <ManageRow icon={CreditCard} label="Payment method" value={methodName} />}
           </dl>
 
-          {confirmingCancel ? (
-            <div className="mt-4 rounded-lg border border-[var(--color-border)] p-4">
-              <p className="text-[13px] text-[var(--color-ink)]">
-                You'll keep access until <strong className="font-semibold">{endDate}</strong> and won't be charged again.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="outline" disabled={busy} onClick={() => setConfirmingCancel(false)}>
-                  Keep auto-renewal
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="text-[var(--color-danger-text)]"
-                  disabled={busy}
-                  onClick={() => void handleConfirmCancel()}
-                >
-                  {checkout.phase === "cancelling" && <LoaderCircle size={14} className="animate-spin" />}
-                  Cancel automatic renewal
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button variant="outline" className="mt-4" disabled={busy} onClick={() => setConfirmingCancel(true)}>
-              Cancel automatic renewal
-            </Button>
-          )}
+          <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--color-muted)]">
+            Your subscription renews automatically. To stop future payments, manage your AutoPay mandate in
+            your UPI app or with your card provider.
+          </p>
         </Card>
       )}
 
       <Card className="p-5">
-        <h2 className="text-[16px] font-bold text-[var(--color-ink)]">{plansHeading}</h2>
-        <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">{plansSubtitle}</p>
+        <SectionHeader title={plansHeading} subtitle={plansSubtitle} />
 
         <div className="mt-5">
           <PlanPicker
@@ -377,39 +325,69 @@ export function SubscriptionSettingsPanel() {
       </Card>
 
       <Card className="p-5">
-        <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Billing history</h2>
-        <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Invoices for your Healvo plan. Patient bills are in Billing.
-        </p>
+        <SectionHeader
+          title="Billing history"
+          subtitle="Invoices for your Healvo plan. Patient bills live in Billing."
+          action={
+            invoices.length > 0 ? (
+              <span className="rounded-md bg-[var(--color-slate-bg)] px-2 py-0.5 text-[12px] font-semibold text-[var(--color-slate-text)]">
+                {invoices.length} invoice{invoices.length === 1 ? "" : "s"}
+              </span>
+            ) : undefined
+          }
+        />
 
         {invoicesLoading ? (
-          <p className="mt-5 text-[13px] text-[var(--color-muted)]">Loading invoices…</p>
+          <div className="mt-5 space-y-2">
+            {[0, 1, 2].map((row) => (
+              <div
+                key={row}
+                className="h-11 animate-pulse rounded-lg bg-[var(--color-canvas)]"
+                style={{ animationDelay: `${row * 90}ms` }}
+              />
+            ))}
+            <span className="sr-only">Loading invoices…</span>
+          </div>
         ) : invoicesError ? (
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] p-4">
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] p-4">
             <p className="text-[13px] text-[var(--color-muted)]">Couldn't load your invoices.</p>
             <Button variant="outline" onClick={() => void loadInvoices()}>
+              <RotateCcw size={14} />
               Try again
             </Button>
           </div>
         ) : invoices.length === 0 ? (
-          <p className="mt-5 rounded-lg border border-dashed border-[var(--color-border)] p-4 text-center text-[13px] text-[var(--color-muted)]">
-            No payments yet. Invoices will show up here after your first payment.
-          </p>
+          <div className="mt-5 flex flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-[var(--color-border)] px-4 py-10 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-mint-bg)] text-[var(--color-teal)]">
+              <ReceiptText size={18} strokeWidth={2} />
+            </div>
+            <p className="text-[13px] text-[var(--color-muted)]">
+              No payments yet. Invoices show up here after your first payment.
+            </p>
+          </div>
         ) : (
           <>
-            <ul className="mt-4 divide-y divide-[var(--color-border)] sm:hidden">
+            <ul className="mt-4 space-y-2 sm:hidden">
               {invoices.map((invoice) => (
-                <li key={invoice.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-[var(--color-ink)]">
-                      {invoice.invoice_number}
+                <li
+                  key={invoice.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] p-3.5"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-slate-bg)] text-[var(--color-slate-text)]">
+                      <FileText size={15} strokeWidth={2} />
                     </div>
-                    <div className="mt-0.5 text-[12px] text-[var(--color-muted)]">
-                      {formatAccessDate(invoice.issued_at)}
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-bold text-[var(--color-ink)]">
+                        {invoice.invoice_number}
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-[var(--color-muted)]">
+                        {formatAccessDate(invoice.issued_at)}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-[13px] font-bold text-[var(--color-ink)] tabular-nums">
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-[13.5px] font-bold text-[var(--color-ink)] tabular-nums">
                       {formatPriceINR(invoice.total_amount_paise)}
                     </span>
                     <Badge tone={INVOICE_TONES[invoice.status]} className="capitalize">
@@ -422,20 +400,33 @@ export function SubscriptionSettingsPanel() {
 
             <div className="mt-4 hidden overflow-x-auto sm:block">
               <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-[var(--color-border)] text-[12px] text-[var(--color-muted)]">
-                  <tr>
-                    <th className="pb-2.5 font-semibold">Invoice</th>
-                    <th className="pb-2.5 font-semibold">Date</th>
-                    <th className="pb-2.5 text-right font-semibold">Amount</th>
-                    <th className="pb-2.5 text-right font-semibold">Status</th>
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] text-[11px] tracking-[0.08em] text-[var(--color-muted)] uppercase">
+                    <th className="pb-2.5 font-bold">Invoice</th>
+                    <th className="pb-2.5 font-bold">Date</th>
+                    <th className="pb-2.5 text-right font-bold">Amount</th>
+                    <th className="pb-2.5 text-right font-bold">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)]">
                   {invoices.map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td className="py-3 font-semibold text-[var(--color-ink)]">{invoice.invoice_number}</td>
-                      <td className="py-3 text-[var(--color-muted)]">{formatAccessDate(invoice.issued_at)}</td>
-                      <td className="py-3 text-right font-semibold text-[var(--color-ink)] tabular-nums">
+                    <tr key={invoice.id} className="transition-colors hover:bg-[var(--color-canvas)]">
+                      <td className="py-3">
+                        <span className="flex items-center gap-2.5">
+                          <FileText
+                            size={15}
+                            strokeWidth={2}
+                            className="shrink-0 text-[var(--color-muted-soft)]"
+                          />
+                          <span className="font-bold text-[var(--color-ink)]">
+                            {invoice.invoice_number}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="py-3 text-[var(--color-muted)]">
+                        {formatAccessDate(invoice.issued_at)}
+                      </td>
+                      <td className="py-3 text-right font-bold text-[var(--color-ink)] tabular-nums">
                         {formatPriceINR(invoice.total_amount_paise)}
                       </td>
                       <td className="py-3 text-right">

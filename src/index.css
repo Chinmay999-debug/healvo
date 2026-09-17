@@ -167,3 +167,22 @@ body {
     animation: none;
   }
 }
+
+/* Subscription — the days-left ring draws itself once on mount. Keyframed
+ * from the full circumference only, so the "to" value stays whatever
+ * stroke-dashoffset the component computed for the real remaining time. */
+@keyframes plan-ring-draw {
+  from {
+    stroke-dashoffset: var(--ring-circumference);
+  }
+}
+
+.plan-ring-value {
+  animation: plan-ring-draw 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-ring-value {
+    animation: none;
+  }
+}
