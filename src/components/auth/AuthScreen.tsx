@@ -1,30 +1,22 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import {
-  ArrowLeft,
-  CalendarDays,
-  CheckCircle2,
-  Mail,
-  Stethoscope,
-  Wallet,
-} from "lucide-react";
-import { Logo } from "../ui/Logo";
+import { CheckCircle2, Mail } from "lucide-react";
 import { Button } from "../ui/Button";
 import { PasswordField } from "./PasswordField";
 import { GoogleButton } from "./GoogleButton";
+import {
+  AuthHeading,
+  AuthShell,
+  AuthStatusIcon,
+  BackToLogin,
+  ErrorText,
+  fieldInputClass,
+  fieldLabelClass,
+} from "./authLayout";
 import { useAuth } from "../../state/authContext";
 import { getErrorMessage } from "../../lib/utils";
+import { MIN_PASSWORD_LENGTH } from "../../lib/passwordPolicy";
 
 type Mode = "login" | "signup" | "forgot";
-
-const fieldLabelClass = "text-[12px] font-semibold text-[var(--color-muted)]";
-const fieldInputClass =
-  "mt-1.5 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-[14px] text-[var(--color-ink)] outline-none focus:border-[var(--color-teal)] focus:ring-2 focus:ring-[var(--color-teal)]/15";
-
-const brandPoints = [
-  { icon: Stethoscope, label: "Consultations & dental charting in one flow" },
-  { icon: CalendarDays, label: "Appointments that keep your day organized" },
-  { icon: Wallet, label: "Billing and payments without the spreadsheet" },
-];
 
 /** The single entry point rendered by RequireAuthAndClinic whenever nobody is
  * signed in — owns all three auth states (log in / create account / forgot
@@ -40,83 +32,14 @@ export function AuthScreen({
   const [mode, setMode] = useState<Mode>("login");
 
   return (
-    <div className="flex min-h-screen bg-[var(--color-canvas)]">
-      <div className="flex w-full flex-1 flex-col justify-center px-5 py-10 sm:px-10 lg:w-[46%] lg:flex-none lg:px-14 xl:px-20">
-        <div className="mx-auto w-full max-w-[380px]">
-          <Logo className="mb-8 block lg:hidden" />
-          {mode === "login" && <LoginForm onForgot={() => setMode("forgot")} onSignUp={() => setMode("signup")} />}
-          {mode === "signup" && (
-            <SignUpForm onLogin={() => setMode("login")} onAccountCreated={onAccountCreated} />
-          )}
-          {mode === "forgot" && <ForgotPasswordForm onBack={() => setMode("login")} />}
-        </div>
-      </div>
-
-      <BrandPanel />
-    </div>
+    <AuthShell>
+      {mode === "login" && <LoginForm onForgot={() => setMode("forgot")} onSignUp={() => setMode("signup")} />}
+      {mode === "signup" && (
+        <SignUpForm onLogin={() => setMode("login")} onAccountCreated={onAccountCreated} />
+      )}
+      {mode === "forgot" && <ForgotPasswordForm onBack={() => setMode("login")} />}
+    </AuthShell>
   );
-}
-
-function BrandPanel() {
-  return (
-    <div
-      className="relative hidden flex-1 flex-col justify-between overflow-hidden p-12 lg:flex"
-      style={{
-        background:
-          "linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end) 65%, var(--color-surface-dark))",
-      }}
-    >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-white/10 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-black/10 blur-3xl"
-      />
-
-      <Logo light className="relative" />
-
-      <div className="relative max-w-md">
-        <h2 className="text-[28px] font-extrabold leading-tight tracking-tight text-white xl:text-[32px]">
-          Run your entire clinic from one calm dashboard.
-        </h2>
-        <p className="mt-3 text-[14.5px] leading-relaxed text-white/80">
-          Patients, appointments, consultations and billing. Healvo keeps your
-          front desk and chairside teams on the same page.
-        </p>
-
-        <div className="mt-8 space-y-3.5">
-          {brandPoints.map((point) => (
-            <div key={point.label} className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white">
-                <point.icon size={16} strokeWidth={2.25} />
-              </div>
-              <span className="text-[13.5px] font-medium text-white/90">{point.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <p className="relative text-[12.5px] text-white/60">
-        Trusted by dental clinics to run their day, end to end.
-      </p>
-    </div>
-  );
-}
-
-function AuthHeading({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="mb-6">
-      <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--color-ink)]">{title}</h1>
-      <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">{subtitle}</p>
-    </div>
-  );
-}
-
-function ErrorText({ message }: { message: string | null }) {
-  if (!message) return null;
-  return <p className="text-[12.5px] font-semibold text-[var(--color-danger-text)]">{message}</p>;
 }
 
 function OrDivider() {
@@ -252,9 +175,7 @@ function SignUpForm({
   if (needsConfirmation) {
     return (
       <div className="text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]">
-          <Mail size={26} strokeWidth={2} />
-        </div>
+        <AuthStatusIcon icon={Mail} />
         <h1 className="mt-4 text-[19px] font-extrabold text-[var(--color-ink)]">Check your inbox</h1>
         <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">
           We&apos;ve sent a confirmation link to <span className="font-semibold text-[var(--color-ink)]">{email}</span>.
@@ -300,11 +221,11 @@ function SignUpForm({
           <span className={fieldLabelClass}>Password</span>
           <PasswordField
             required
-            minLength={6}
+            minLength={MIN_PASSWORD_LENGTH}
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 6 characters"
+            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
             className="mt-1.5"
           />
         </label>
@@ -330,55 +251,83 @@ function SignUpForm({
 }
 
 function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
+  const { sendPasswordReset } = useAuth();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [resent, setResent] = useState(false);
 
-  // Frontend-only for this phase — no supabase.auth.resetPasswordForEmail()
-  // call yet (see the scope note in RequireAuthAndClinic.tsx). This mimics
-  // the request/success shape the real flow will have.
+  async function send(): Promise<boolean> {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await sendPasswordReset(email.trim());
+      return true;
+    } catch (err) {
+      // Supabase answers the same way for a registered and an unregistered
+      // address, so nothing reaching here reveals whether an account exists —
+      // it is a transport or rate-limit problem, which is worth showing.
+      setError(getErrorMessage(err, "Couldn't send the reset email. Please try again."));
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    setSubmitting(false);
-    setSent(true);
+    if (await send()) setSent(true);
+  }
+
+  async function handleResend() {
+    setResent(false);
+    if (await send()) setResent(true);
   }
 
   if (sent) {
     return (
       <div className="text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]">
-          <CheckCircle2 size={28} strokeWidth={2} />
-        </div>
+        <AuthStatusIcon icon={CheckCircle2} />
         <h1 className="mt-4 text-[19px] font-extrabold text-[var(--color-ink)]">Check your email</h1>
-        <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">
-          If an account exists for <span className="font-semibold text-[var(--color-ink)]">{email}</span>, a
-          password reset link is on its way.
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--color-muted)]">
+          If an account exists for{" "}
+          <span className="font-semibold text-[var(--color-ink)]">{email}</span>, a password reset
+          link is on its way. The link works once and expires in an hour.
         </p>
-        <button
-          type="button"
-          onClick={onBack}
-          className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-[var(--color-teal)] hover:underline"
-        >
-          <ArrowLeft size={14} strokeWidth={2.5} />
-          Back to log in
-        </button>
+
+        <div className="mt-6 space-y-3">
+          <Button
+            variant="outline"
+            className="w-full justify-center py-2.5"
+            disabled={submitting}
+            onClick={() => void handleResend()}
+          >
+            {submitting ? "Sending…" : "Resend the email"}
+          </Button>
+          {resent && (
+            <p className="text-[12.5px] font-semibold text-[var(--color-mint-text)]">
+              Sent again. It can take a minute to arrive.
+            </p>
+          )}
+          <ErrorText message={error} />
+          <p className="text-[12.5px] text-[var(--color-muted)]">
+            Nothing in your inbox? Check your spam folder.
+          </p>
+        </div>
+
+        <BackToLogin onClick={onBack} className="mt-6" />
       </div>
     );
   }
 
   return (
     <>
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--color-muted)] hover:text-[var(--color-ink)]"
-      >
-        <ArrowLeft size={14} strokeWidth={2.5} />
-        Back to log in
-      </button>
-      <AuthHeading title="Forgot your password?" subtitle="Enter your email and we'll send you a reset link." />
+      <BackToLogin onClick={onBack} />
+      <AuthHeading
+        title="Forgot your password?"
+        subtitle="Enter your email and we'll send you a reset link."
+      />
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block">
@@ -395,7 +344,14 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
           />
         </label>
 
-        <Button type="submit" variant="primary" className="w-full justify-center py-2.5" disabled={submitting}>
+        <ErrorText message={error} />
+
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full justify-center py-2.5"
+          disabled={submitting || !email.trim()}
+        >
           {submitting ? "Sending…" : "Send reset link"}
         </Button>
       </form>

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Navigate } from "react-router-dom";
 import { Logo } from "../ui/Logo";
 import { AuthScreen } from "./AuthScreen";
 import { OnboardingWizard } from "../onboarding/OnboardingWizard";
@@ -6,6 +7,7 @@ import { ClinicSuspendedScreen } from "./ClinicSuspendedScreen";
 import { SubscriptionExpiredScreen } from "./SubscriptionExpiredScreen";
 import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
+import { PASSWORD_RESET_PATH } from "../../services/auth";
 
 function LoadingScreen({ message = "Loading your account…" }: { message?: string }) {
   return (
@@ -36,11 +38,21 @@ export function RequireAuthAndClinic({ children }: { children: ReactNode }) {
 
   // Latches the wizard on the first render where there's a signed-in user
   // with no clinic yet, and keeps it latched until onFinish().
+  // Never latches during a password reset: that session is only here to set
+  // a password, and latching would strand the user in the wizard afterwards.
   useEffect(() => {
-    if (!auth.loading && auth.user && !auth.activeClinic) setOnboarding(true);
-  }, [auth.loading, auth.user, auth.activeClinic]);
+    if (!auth.loading && !auth.passwordRecovery && auth.user && !auth.activeClinic) {
+      setOnboarding(true);
+    }
+  }, [auth.loading, auth.passwordRecovery, auth.user, auth.activeClinic]);
 
   if (auth.loading) return <LoadingScreen message="Loading your account…" />;
+
+  // A password-reset link signs the user in for real, so without this they
+  // would land in the app (or onboarding) with the reset unfinished. Holds
+  // until the new password is saved or they sign out.
+  if (auth.passwordRecovery) return <Navigate to={PASSWORD_RESET_PATH} replace />;
+
   if (!auth.user) return <AuthScreen onAccountCreated={setPendingName} />;
 
   if (onboarding || !auth.activeClinic) {

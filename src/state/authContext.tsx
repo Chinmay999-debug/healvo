@@ -10,12 +10,18 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import {
   getSession,
+  hasPasswordIdentity,
   onAuthStateChange,
+  sendPasswordResetEmail,
   signInWithGoogle as signInWithGoogleRequest,
   signInWithPassword,
   signOut as signOutRequest,
   signUpWithPassword,
+  updatePassword,
+  verifyPassword,
 } from "../services/auth";
+import { authRedirect } from "../lib/supabaseClient";
+import { isRecoveryRedirect } from "../lib/authRedirect";
 import {
   getActiveClinic,
   getCurrentProfile,
@@ -62,9 +68,53 @@ interface AuthContextValue {
   /** Re-runs profile/clinic resolution for the current session — e.g. after
    * createClinicWithOwner() succeeds. */
   refresh: () => Promise<void>;
+
+  /** True from the moment a password-reset link is opened until the new
+   * password is saved (or the user signs out). RequireAuthAndClinic reads
+   * this to keep a recovery session out of the app and onboarding. */
+  passwordRecovery: boolean;
+  /** False for Google-only accounts, which have no password to change. */
+  hasPassword: boolean;
+  /** Emails a reset link. Resolves identically whether or not the address has
+   * an account — never branch on it, or you leak who is registered. */
+  sendPasswordReset: (email: string) => Promise<void>;
+  /** Saves the new password for a recovery session and ends the reset state. */
+  completePasswordReset: (password: string) => Promise<void>;
+  /** Signed-in change. Resolves false when the current password is wrong, so
+   * callers can show that inline instead of as a thrown error. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * A recovery session is an ordinary Supabase session, so nothing about the
+ * session itself says "this person is halfway through resetting a password".
+ * The flag is kept in sessionStorage so a refresh on the set-password screen
+ * does not drop the user into the app with the reset unfinished, and so it
+ * dies with the tab rather than lingering.
+ */
+const RECOVERY_FLAG = "healvo.password-recovery";
+
+function readRecoveryFlag(): boolean {
+  // The URL check covers the very first paint, before onAuthStateChange has
+  // had a chance to fire PASSWORD_RECOVERY.
+  if (isRecoveryRedirect(authRedirect)) return true;
+  try {
+    return sessionStorage.getItem(RECOVERY_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeRecoveryFlag(active: boolean) {
+  try {
+    if (active) sessionStorage.setItem(RECOVERY_FLAG, "1");
+    else sessionStorage.removeItem(RECOVERY_FLAG);
+  } catch {
+    // Private-mode storage refusal: the in-memory flag still gates this tab.
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -72,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [clinics, setClinics] = useState<ClinicMembership[]>([]);
   const [activeClinic, setActiveClinic] = useState<ClinicSummary | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(readRecoveryFlag);
 
   const loadIdentity = useCallback(async (currentSession: Session | null) => {
     if (!currentSession) {
@@ -101,8 +152,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     });
 
-    const unsubscribe = onAuthStateChange((nextSession) => {
+    const unsubscribe = onAuthStateChange((nextSession, event) => {
       if (cancelled) return;
+      if (event === "PASSWORD_RECOVERY") {
+        writeRecoveryFlag(true);
+        setPasswordRecovery(true);
+      } else if (event === "SIGNED_OUT") {
+        writeRecoveryFlag(false);
+        setPasswordRecovery(false);
+      }
       setSession(nextSession);
       // Re-asserts loading for every post-mount identity resolution, not
       // just the very first one — a sign-in flips `session`/`user` truthy
@@ -150,6 +208,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadIdentity(session);
   }, [loadIdentity, session]);
 
+  const sendPasswordReset = useCallback(async (email: string) => {
+    await sendPasswordResetEmail(email);
+  }, []);
+
+  const completePasswordReset = useCallback(async (password: string) => {
+    await updatePassword(password);
+    // Only cleared once Supabase has accepted the password. Clearing first
+    // would release the guard while the reset could still fail.
+    writeRecoveryFlag(false);
+    setPasswordRecovery(false);
+  }, []);
+
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      const email = session?.user?.email;
+      if (!email) throw new Error("You need to be signed in to change your password.");
+      const correct = await verifyPassword(email, currentPassword);
+      if (!correct) return false;
+      await updatePassword(newPassword);
+      return true;
+    },
+    [session],
+  );
+
   const value = useMemo(
     () => ({
       loading,
@@ -164,8 +246,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithGoogle,
       signOut,
       refresh,
+      passwordRecovery,
+      hasPassword: hasPasswordIdentity(session?.user ?? null),
+      sendPasswordReset,
+      completePasswordReset,
+      changePassword,
     }),
-    [loading, session, profile, clinics, activeClinic, signIn, signUp, signInWithGoogle, signOut, refresh],
+    [
+      loading,
+      session,
+      profile,
+      clinics,
+      activeClinic,
+      signIn,
+      signUp,
+      signInWithGoogle,
+      signOut,
+      refresh,
+      passwordRecovery,
+      sendPasswordReset,
+      completePasswordReset,
+      changePassword,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

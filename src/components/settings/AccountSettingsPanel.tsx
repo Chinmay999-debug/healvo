@@ -1,8 +1,9 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { LogOut } from "lucide-react";
+import { KeyRound, LogOut } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Avatar } from "../ui/Avatar";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 import { PhoneInput } from "../ui/PhoneInput";
 import { inputClass } from "../ui/fieldStyles";
 import { SegmentedControl } from "../patient-record/SegmentedControl";
@@ -30,7 +31,8 @@ function localDigits(phone: string) {
 
 export function AccountSettingsPanel() {
   const { doctorProfile, updateDoctorProfile, uploadAvatarPhoto, removeAvatarPhoto } = useClinicData();
-  const { signOut } = useAuth();
+  const { signOut, hasPassword } = useAuth();
+  const [changingPassword, setChangingPassword] = useState(false);
   const { theme, setTheme } = useTheme();
   const [draft, setDraft] = useState({
     name: doctorProfile.name,
@@ -213,14 +215,22 @@ export function AccountSettingsPanel() {
       <Card className="p-5">
         <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Security</h2>
         <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Keep your account secure.
+          {hasPassword
+            ? "Keep your account secure."
+            : "You sign in with Google, so Google manages your password."}
         </p>
         <div className="mt-4">
-          <Button variant="outline" type="button">
-            Change password
+          <Button variant="outline" type="button" onClick={() => setChangingPassword(true)}>
+            <KeyRound size={14} strokeWidth={2} />
+            {hasPassword ? "Change password" : "Manage password"}
           </Button>
         </div>
       </Card>
+
+      <ChangePasswordModal
+        open={changingPassword}
+        onClose={() => setChangingPassword(false)}
+      />
 
       <Card className="p-5">
         <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Appearance</h2>

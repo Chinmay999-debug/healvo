@@ -1,5 +1,5 @@
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabaseClient";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
+import { createVerificationClient, supabase } from "../lib/supabaseClient";
 
 /** Thin wrapper over supabase-js auth — the one place session/auth calls
  * live, so components and the future clinic/auth context never import
@@ -59,9 +59,98 @@ export async function signOut(): Promise<void> {
 
 /** Fires immediately with the current state, then again on every sign-in/
  * sign-out/token-refresh. Returns the unsubscribe function. */
-export function onAuthStateChange(callback: (session: Session | null) => void): () => void {
+export function onAuthStateChange(
+  callback: (session: Session | null, event: AuthChangeEvent) => void,
+): () => void {
   const {
     data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, session) => callback(session));
+  } = supabase.auth.onAuthStateChange((event, session) => callback(session, event));
   return () => subscription.unsubscribe();
+}
+
+// Password management ---------------------------------------------------------
+
+/** Where Supabase sends the browser after a reset link is clicked. */
+export const PASSWORD_RESET_PATH = "/reset-password";
+
+/**
+ * Built from the running origin rather than a baked-in constant, so the same
+ * bundle works on localhost, a Vercel preview and app.healvo.in. Every origin
+ * used must also be listed in the Supabase dashboard's redirect allow-list —
+ * Supabase silently falls back to Site URL for anything not on it.
+ */
+export function passwordResetRedirectUrl(): string {
+  return `${window.location.origin}${PASSWORD_RESET_PATH}`;
+}
+
+/**
+ * Asks Supabase to email a reset link. Supabase deliberately answers the same
+ * way whether or not the address has an account, so callers must show the
+ * same "check your email" state either way and never branch on the result.
+ */
+export async function sendPasswordResetEmail(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: passwordResetRedirectUrl(),
+  });
+  if (error) throw error;
+}
+
+/** Sets a new password for whoever the current session belongs to. */
+export async function updatePassword(password: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+}
+
+/**
+ * Confirms the person at the keyboard knows the account's current password.
+ *
+ * This project has `secure_password_change = false`, so Supabase would happily
+ * change the password on session alone — that would let anyone who walked up
+ * to an unlocked machine take the account over. The check runs on a throwaway
+ * client (see createVerificationClient) so neither a wrong guess nor a correct
+ * one touches the signed-in session.
+ *
+ * Returns false for a wrong password; throws for anything else (offline,
+ * rate-limited) so those are not reported to the user as "wrong password".
+ */
+export async function verifyPassword(email: string, password: string): Promise<boolean> {
+  const client = createVerificationClient();
+  const { error } = await client.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    const invalid =
+      error.status === 400 ||
+      /invalid login credentials|invalid_credentials/i.test(error.message);
+    if (invalid) return false;
+    throw error;
+  }
+
+  // Drop the token this check just minted. Local scope only: a global sign-out
+  // here would revoke the user's real session as well.
+  await client.auth.signOut({ scope: "local" }).catch(() => {});
+  return true;
+}
+
+/**
+ * Which providers this account can sign in with, from the identities Supabase
+ * attaches to the user ("email", "google", …).
+ */
+export function signInProviders(user: User | null): string[] {
+  if (!user) return [];
+  const identities = user.identities ?? [];
+  if (identities.length > 0) return identities.map((identity) => identity.provider);
+  // Older sessions predate `identities` being populated; app_metadata carries
+  // the same information.
+  const metadata = user.app_metadata ?? {};
+  if (Array.isArray(metadata.providers)) return metadata.providers as string[];
+  return metadata.provider ? [metadata.provider as string] : [];
+}
+
+/**
+ * True when the account has an email/password identity. A Google-only account
+ * has no password to ask for, so the change-password form must not pretend
+ * otherwise.
+ */
+export function hasPasswordIdentity(user: User | null): boolean {
+  return signInProviders(user).includes("email");
 }

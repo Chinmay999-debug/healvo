@@ -10,6 +10,7 @@ import Reports from "./pages/Reports";
 import Staff from "./pages/Staff";
 import Settings from "./pages/Settings";
 import BookAppointment from "./pages/BookAppointment";
+import ResetPassword from "./pages/ResetPassword";
 import { Placeholder } from "./pages/Placeholder";
 import { PatientOverview } from "./components/patient-record/PatientOverview";
 import { ConsultationWorkspace } from "./components/patient-record/ConsultationWorkspace";
@@ -21,6 +22,7 @@ import { ClinicDataProvider } from "./state/clinicData";
 import { AuthProvider } from "./state/authContext";
 import { SubscriptionProvider } from "./state/subscriptionContext";
 import { RequireAuthAndClinic } from "./components/auth/RequireAuthAndClinic";
+import { PASSWORD_RESET_PATH } from "./services/auth";
 
 export default function App() {
   return (
@@ -35,6 +37,12 @@ export default function App() {
             this same URL gets identical behavior, not a shortcut through
             their own session. */}
         <Route path="/book/:slug" element={<BookAppointment />} />
+        {/* Where Supabase's password-reset email lands. Public for the same
+            reason as booking above: the link carries a real session, and
+            routing it through RequireAuthAndClinic would push a half-reset
+            user into the app or the onboarding wizard before they had
+            chosen a password. */}
+        <Route path={PASSWORD_RESET_PATH} element={<ResetPassword />} />
         <Route
           path="/*"
           element={
