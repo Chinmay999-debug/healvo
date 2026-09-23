@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { UserCircle } from "lucide-react";
 import Overview from "./pages/Overview";
 import Today from "./pages/Today";
@@ -23,11 +24,30 @@ import { AuthProvider } from "./state/authContext";
 import { SubscriptionProvider } from "./state/subscriptionContext";
 import { RequireAuthAndClinic } from "./components/auth/RequireAuthAndClinic";
 import { PASSWORD_RESET_PATH } from "./services/auth";
+import { trackPageView } from "./lib/metaPixel";
+
+import { captureAttribution } from "./lib/attribution";
+
+/**
+ * Sends PageView on route changes, for the routes metaPixel.ts allows. Sitting
+ * inside the Router but outside RequireAuthAndClinic means it also covers the
+ * signed-out landing on app.healvo.in, which is the click that arrives from the
+ * ad — the one PageView the campaign actually needs to see.
+ */
+function MetaPixelPageViews() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    trackPageView(pathname);
+    captureAttribution();
+  }, [pathname]);
+  return null;
+}
 
 export default function App() {
   return (
     <AuthProvider>
       <SubscriptionProvider>
+        <MetaPixelPageViews />
         <Routes>
         {/* Public booking has no account of its own and must work for a
             genuinely anonymous visitor — it lives entirely outside

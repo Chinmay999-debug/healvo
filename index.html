@@ -30,6 +30,28 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap"
       rel="stylesheet"
     />
+    <!-- Meta Pixel Code -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      // Automatic Advanced Matching off, before init. Left on, the pixel reads
+      // input fields and button text off the page and ships them to Meta — in
+      // this app that is patient names, phone numbers and prescriptions.
+      fbq('set', 'autoConfig', false, '1390497239915643');
+      fbq('init', '1390497239915643');
+      // Deliberately no fbq('track', 'PageView') here. Every pixel event carries
+      // the current URL, and this app's URLs hold patient and bill ids. PageView
+      // is sent from src/lib/metaPixel.ts instead, for the few routes that carry
+      // no clinical identifier. Do not "fix" this by adding the usual line.
+    </script>
+    <!-- End Meta Pixel Code -->
+
     <title>Healvo</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>

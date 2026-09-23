@@ -6,6 +6,8 @@ import { Logo } from "../ui/Logo";
 import { useAuth } from "../../state/authContext";
 import { useTheme } from "../../state/themeContext";
 import { createClinicWithOwner } from "../../services/clinic";
+import { getClinicSubscription } from "../../services/subscription";
+import { trackStartTrial } from "../../lib/metaPixel";
 import {
   clearWizardDraft,
   profileNameForPrefill,
@@ -15,6 +17,7 @@ import {
 } from "../../lib/onboardingDraft";
 import { normalizePhone } from "../../lib/phone";
 import { cn, getErrorMessage } from "../../lib/utils";
+import { getAttribution } from "../../lib/attribution";
 import { StepAboutYou } from "./StepAboutYou";
 import { StepClinic } from "./StepClinic";
 import { StepFeatureIntro } from "./StepFeatureIntro";
@@ -181,6 +184,7 @@ export function OnboardingWizard({
         // mobile was never collected at all.
         phone: normalizePhone(aboutYou.mobile),
         title: aboutYou.title.trim() || DEFAULT_TITLE,
+        attribution: getAttribution(),
       });
       // clinicSettings (address/city/phone) stays local/mock-backed this
       // phase — see state/clinicData.tsx's file header. ClinicDataProvider
@@ -201,6 +205,34 @@ export function OnboardingWizard({
         clearWizardDraft(user.id);
       }
       await refresh();
+
+      // The ad campaign's conversion. Reported here rather than from the
+      // "Start free trial" button because that button only opens a form —
+      // nothing has happened yet when it is clicked. Even the clinic existing
+      // is not quite enough, so this asks the server what the subscription
+      // actually is and reports only a genuinely running trial. A clinic
+      // created without one (a seat added to an existing account, a plan the
+      // server declined to trial) correctly reports nothing.
+      void (async () => {
+        try {
+          const subscription = await getClinicSubscription(newClinic.id);
+          const trialLive =
+            subscription?.status === "trialing" &&
+            Boolean(subscription.trial_ends_at) &&
+            new Date(subscription.trial_ends_at!).getTime() > Date.now();
+          if (subscription && trialLive) {
+            trackStartTrial({
+              subscriptionId: subscription.subscription_id,
+              planCode: subscription.plan_code,
+              trialDays: subscription.trial_days,
+            });
+          }
+        } catch (err) {
+          // Never let ad measurement stand between someone and their clinic.
+          console.error("Could not report trial start:", err);
+        }
+      })();
+
       // Trigger the welcome email securely via Edge Function
       supabase.functions.invoke("welcome-email", {
         body: { clinicId: newClinic.id }

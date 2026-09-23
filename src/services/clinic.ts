@@ -94,6 +94,7 @@ export interface CreateClinicInput {
   fullName?: string;
   phone?: string;
   title?: string;
+  attribution?: any; // To be typed properly later, or just any for now since it's sent to RPC
 }
 
 /** Wraps the create_clinic_with_owner RPC — the only sanctioned way to
@@ -109,6 +110,7 @@ export async function createClinicWithOwner(input: CreateClinicInput): Promise<C
       p_full_name: input.fullName ?? null,
       p_phone: input.phone ?? null,
       p_title: input.title ?? null,
+      p_attribution: input.attribution ?? null,
     })
     .single();
   if (error) throw error;

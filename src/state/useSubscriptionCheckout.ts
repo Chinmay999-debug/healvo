@@ -20,6 +20,7 @@ import {
 } from "../services/platformBilling";
 import { confirmRecurringCheckout } from "./recurringConfirmation";
 import { getErrorMessage } from "../lib/utils";
+import { trackPurchase } from "../lib/metaPixel";
 
 export type CheckoutPhase = "idle" | "starting" | "paying" | "confirming" | "cancelling";
 
@@ -54,6 +55,30 @@ export function useSubscriptionCheckout() {
   const [pendingPlanCode, setPendingPlanCode] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<CheckoutOutcome | null>(null);
   const busyRef = useRef(false);
+  // What the order the server just created is worth, in paise. Captured at
+  // checkout creation because that is the only place the real amount is
+  // known, and read back only once a payment is confirmed. Null for the
+  // recurring path, where the server hands back a subscription id and no price.
+  const checkoutValueRef = useRef<number | null>(null);
+
+  /**
+   * Reports Purchase to Meta, and only ever from a confirmed payment.
+   *
+   * Every caller is downstream of server verification or of the webhook
+   * having settled the charge. Opening Razorpay, dismissing it, a failed
+   * card, and an authorised monthly mandate whose first charge is still in
+   * the future (`autorenew_on`) all deliberately report nothing.
+   */
+  const reportPurchase = useCallback(
+    (transactionId: string, planCode: string) => {
+      trackPurchase({
+        transactionId,
+        planCode,
+        valueInPaise: checkoutValueRef.current,
+      });
+    },
+    [],
+  );
 
   const finish = useCallback(() => {
     busyRef.current = false;
@@ -76,6 +101,7 @@ export function useSubscriptionCheckout() {
               razorpay_signature: response.razorpay_signature,
             });
             await refreshSubscription();
+            reportPurchase(result.invoice_number ?? orderId, planCode);
             setOutcome({
               kind: "success",
               invoiceNumber: result.invoice_number ?? null,
@@ -92,6 +118,7 @@ export function useSubscriptionCheckout() {
             const status = await getSubscriptionPaymentStatus(orderId).catch(() => null);
             if (status === "captured") {
               await refreshSubscription();
+              reportPurchase(orderId, planCode);
               setOutcome({ kind: "success", invoiceNumber: null, accessEndsAt: null });
               return;
             }
@@ -103,7 +130,7 @@ export function useSubscriptionCheckout() {
         finish();
       }
     },
-    [refreshSubscription, finish],
+    [refreshSubscription, finish, reportPurchase],
   );
 
   const confirmRecurring = useCallback(
@@ -124,6 +151,12 @@ export function useSubscriptionCheckout() {
           previousEnd,
         );
 
+        // Only "success" means money moved. "autorenew_on" is a mandate whose
+        // first charge is still ahead of it, so it reports no Purchase.
+        if (confirmation.kind === "success") {
+          reportPurchase(confirmation.invoiceNumber ?? response.razorpay_payment_id, RECURRING_PLAN_CODE);
+        }
+
         setOutcome(
           confirmation.kind === "pending"
             ? { kind: "pending", paymentId: response.razorpay_payment_id }
@@ -133,7 +166,7 @@ export function useSubscriptionCheckout() {
         finish();
       }
     },
-    [refreshSubscription, finish],
+    [refreshSubscription, finish, reportPurchase],
   );
 
   const startCheckout = useCallback(
@@ -144,6 +177,7 @@ export function useSubscriptionCheckout() {
       setOutcome(null);
       setPendingPlanCode(planCode);
       setPhase("starting");
+      checkoutValueRef.current = null;
 
       // The server makes the final call; this only picks which checkout to open.
       const recurring = planCode === RECURRING_PLAN_CODE && Boolean(billing?.recurring_monthly_available);
@@ -162,6 +196,12 @@ export function useSubscriptionCheckout() {
         let options: ConstructorParameters<NonNullable<typeof window.Razorpay>>[0];
 
         if (recurring) {
+          // The recurring endpoint hands back a subscription id and no price, so
+          // the reported Purchase value falls back to the catalogued price —
+          // but only when the plan on file is the very plan being bought.
+          // Anything less exact is better reported as no value than a wrong one.
+          checkoutValueRef.current =
+            subscription?.plan_code === planCode ? subscription.base_price_paise : null;
           const [checkout, scriptLoaded] = await Promise.all([createRecurringSubscription(clinicId, planCode), scriptLoad]);
           if (!scriptLoaded || !window.Razorpay) {
             throw new Error("Couldn't open checkout. Check your internet connection and try again.");
@@ -189,6 +229,7 @@ export function useSubscriptionCheckout() {
           if (!scriptLoaded || !window.Razorpay) {
             throw new Error("Couldn't open checkout. Check your internet connection and try again.");
           }
+          checkoutValueRef.current = checkout.amount;
           const months = checkout.entitlementMonths;
           options = {
             key: checkout.keyId,
@@ -223,7 +264,17 @@ export function useSubscriptionCheckout() {
         finish();
       }
     },
-    [clinicId, userEmail, billing?.recurring_monthly_available, subscription?.current_period_ends_at, confirmOneTimePayment, confirmRecurring, finish],
+    [
+      clinicId,
+      userEmail,
+      billing?.recurring_monthly_available,
+      subscription?.current_period_ends_at,
+      subscription?.plan_code,
+      subscription?.base_price_paise,
+      confirmOneTimePayment,
+      confirmRecurring,
+      finish,
+    ],
   );
 
   const cancelAutoRenew = useCallback(async (): Promise<boolean> => {
