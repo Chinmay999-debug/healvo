@@ -8,6 +8,22 @@ import { SubscriptionExpiredScreen } from "./SubscriptionExpiredScreen";
 import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
 import { PASSWORD_RESET_PATH } from "../../services/auth";
+import { supabase } from "../../lib/supabaseClient";
+
+function ClinicActivityTracker({ clinicId }: { clinicId: string }) {
+  useEffect(() => {
+    const storageKey = `healvo:last-used:${clinicId}`;
+    const lastUpdateStr = sessionStorage.getItem(storageKey);
+    const now = Date.now();
+    // Throttle to once every 15 minutes per session to avoid spamming the DB
+    if (!lastUpdateStr || now - parseInt(lastUpdateStr, 10) > 15 * 60 * 1000) {
+      sessionStorage.setItem(storageKey, now.toString());
+      supabase.rpc("touch_clinic", { p_clinic_id: clinicId }).then(undefined, () => {});
+    }
+  }, [clinicId]);
+  return null;
+}
+
 
 function LoadingScreen({ message = "Loading your account…" }: { message?: string }) {
   return (
@@ -101,5 +117,10 @@ export function RequireAuthAndClinic({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <ClinicActivityTracker clinicId={auth.activeClinic.id} />
+      {children}
+    </>
+  );
 }
