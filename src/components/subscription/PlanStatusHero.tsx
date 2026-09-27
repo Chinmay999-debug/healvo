@@ -78,7 +78,7 @@ export interface PlanStatusHeroProps {
   /** Short status word shown in the pill, e.g. "Free trial", "Auto-renews". */
   statusLabel: string;
   tone: PlanTone;
-  /** The plan line, e.g. "Monthly plan" or "7-day free trial". */
+  /** The plan line, e.g. "Monthly plan" or "15-day free trial". */
   title: string;
   /** Supporting sentence under the title — the renewal or expiry promise. */
   caption: ReactNode;

@@ -152,7 +152,7 @@ export function PlanPicker({
       tagline: recurringMonthly ? "Pay as you go, month by month" : "Try Healvo month by month",
       priceNote: recurringMonthly ? "Charged automatically every month" : "One payment, no auto-renewal",
       highlights: recurringMonthly
-        ? ["7-day free trial · no card required", "Renews automatically each month"]
+        ? ["15-day free trial · no card required", "Renews automatically each month"]
         : [monthsOfAccess(monthly.accessMonths), "Renew whenever you're ready"],
       action: monthlyAction(),
     },

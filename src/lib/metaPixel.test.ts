@@ -73,7 +73,7 @@ describe("Meta Pixel Tracking", () => {
 
   describe("trackStartTrial", () => {
     it("sends value: 0 and currency: INR without PII", () => {
-      trackStartTrial({ subscriptionId: "sub_123", planCode: "pro_annual", trialDays: 7 });
+      trackStartTrial({ subscriptionId: "sub_123", planCode: "pro_annual", trialDays: 15 });
 
       expect(fbqMock).toHaveBeenCalledTimes(1);
       expect(fbqMock).toHaveBeenCalledWith(
@@ -85,15 +85,15 @@ describe("Meta Pixel Tracking", () => {
           value: 0,
           currency: "INR",
           predicted_ltv: 0,
-          trial_days: 7,
+          trial_days: 15,
         },
         { eventID: "StartTrial:sub_123" }
       );
     });
 
     it("does not fire twice for the same subscriptionId", () => {
-      trackStartTrial({ subscriptionId: "sub_123", planCode: "pro_annual", trialDays: 7 });
-      trackStartTrial({ subscriptionId: "sub_123", planCode: "pro_annual", trialDays: 7 });
+      trackStartTrial({ subscriptionId: "sub_123", planCode: "pro_annual", trialDays: 15 });
+      trackStartTrial({ subscriptionId: "sub_123", planCode: "pro_annual", trialDays: 15 });
       expect(fbqMock).toHaveBeenCalledTimes(1);
     });
   });

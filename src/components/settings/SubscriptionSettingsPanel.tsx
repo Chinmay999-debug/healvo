@@ -175,7 +175,7 @@ export function SubscriptionSettingsPanel() {
     ? {
         tone: "trial",
         label: "Free trial",
-        title: `${subscription?.trial_days ?? 7}-day free trial`,
+        title: `${subscription?.trial_days ?? 15}-day free trial`,
         caption: (
           <>
             Every Healvo feature is unlocked. Your trial ends on{" "}

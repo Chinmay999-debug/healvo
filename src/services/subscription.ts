@@ -45,7 +45,7 @@ export function hasSubscriptionAccess(
 }
 
 /**
- * Returns true if the clinic is currently within its 7-day free trial.
+ * Returns true if the clinic is currently within its 15-day free trial.
  */
 export function isTrialing(
   subscription: ClinicSubscription | null,

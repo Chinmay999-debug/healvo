@@ -25,7 +25,7 @@ function subscription(overrides: Partial<ClinicSubscription> = {}): ClinicSubscr
     plan_interval: "month",
     base_price_paise: 49900,
     currency: "INR",
-    trial_days: 7,
+    trial_days: 15,
     entitlement_months: 1,
     status: "trialing",
     trial_started_at: "2026-09-15T19:17:29.392Z",
