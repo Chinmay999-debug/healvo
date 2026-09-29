@@ -12,7 +12,7 @@ import {
   type RazorpayCheckoutResponse,
 } from "../services/subscription";
 import {
-  RECURRING_PLAN_CODE,
+  checkoutRouteFor,
   cancelAutoRenewal,
   createRecurringSubscription,
   getClinicBillingState,
@@ -134,7 +134,12 @@ export function useSubscriptionCheckout() {
   );
 
   const confirmRecurring = useCallback(
-    async (targetClinicId: string, response: RazorpayCheckoutResponse, previousEnd: string | null) => {
+    async (
+      targetClinicId: string,
+      planCode: string,
+      response: RazorpayCheckoutResponse,
+      previousEnd: string | null,
+    ) => {
       setPhase("confirming");
       try {
         // Retries verify while Razorpay is still authorizing the subscription and
@@ -154,7 +159,7 @@ export function useSubscriptionCheckout() {
         // Only "success" means money moved. "autorenew_on" is a mandate whose
         // first charge is still ahead of it, so it reports no Purchase.
         if (confirmation.kind === "success") {
-          reportPurchase(confirmation.invoiceNumber ?? response.razorpay_payment_id, RECURRING_PLAN_CODE);
+          reportPurchase(confirmation.invoiceNumber ?? response.razorpay_payment_id, planCode);
         }
 
         setOutcome(
@@ -180,7 +185,7 @@ export function useSubscriptionCheckout() {
       checkoutValueRef.current = null;
 
       // The server makes the final call; this only picks which checkout to open.
-      const recurring = planCode === RECURRING_PLAN_CODE && Boolean(billing?.recurring_monthly_available);
+      const recurring = checkoutRouteFor(planCode, Boolean(billing?.recurring_monthly_available)) === "recurring";
       const previousEnd = subscription?.current_period_ends_at ?? null;
 
       try {
@@ -221,7 +226,7 @@ export function useSubscriptionCheckout() {
             modal,
             handler: (response) => {
               paymentSubmitted = true;
-              void confirmRecurring(clinicId, response, previousEnd);
+              void confirmRecurring(clinicId, planCode, response, previousEnd);
             },
           };
         } else {

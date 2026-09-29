@@ -46,7 +46,24 @@ export function createRecurringSubscription(clinicId: string, planCode: string):
   );
 }
 
-export const RECURRING_PLAN_CODE = "healvo_dental_monthly";
+/**
+ * Monthly plans, sold as a Razorpay Subscription once recurring billing is on
+ * for the clinic. Annual plans are never here: they are always a one-time
+ * Order, so an annual Razorpay subscription can't be created from the app.
+ */
+export const RECURRING_PLAN_CODES: readonly string[] = ["core", "premium"];
+
+export function isRecurringPlanCode(planCode: string): boolean {
+  return RECURRING_PLAN_CODES.includes(planCode);
+}
+
+/**
+ * Which checkout the app opens for a plan. The server still makes the final
+ * call; recurring checkout only when the clinic has recurring billing enabled.
+ */
+export function checkoutRouteFor(planCode: string, recurringAvailable: boolean): "recurring" | "one_time" {
+  return recurringAvailable && isRecurringPlanCode(planCode) ? "recurring" : "one_time";
+}
 
 export interface RecurringVerifyResult {
   success: boolean;
