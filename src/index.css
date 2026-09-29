@@ -181,8 +181,21 @@ body {
   animation: plan-ring-draw 900ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Plan picker — prices and the annual note ease in when the billing toggle flips. */
+@keyframes plan-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.plan-fade-in {
+  animation: plan-fade-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .plan-ring-value {
+  .plan-ring-value,
+  .plan-fade-in {
     animation: none;
   }
 }

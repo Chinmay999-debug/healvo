@@ -22,7 +22,7 @@ import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
 import { useClinicData } from "../../state/clinicData";
 import { useSignedMediaUrl } from "../../lib/signedMedia";
-import { planDisplayName } from "../../services/subscription";
+import { planDisplayName, planTierName } from "../../services/subscription";
 
 const AVATAR_BUCKET = "avatars";
 
@@ -39,7 +39,8 @@ function SubscriptionIndicator({
   if (!isTrial && !isActive && !inGrace) return null;
 
   const needsAttention = isTrial || inGrace || (!autoRenew && daysRemaining <= 7);
-  const label = isTrial ? "Free trial" : `${planDisplayName(activePlan?.interval)} plan`;
+  const tier = planTierName(activePlan?.code, activePlan?.name);
+  const label = isTrial ? "Free trial" : tier ? `${tier} plan` : `${planDisplayName(activePlan?.interval)} plan`;
   const status = isTrial
     ? `${daysRemaining}d left`
     : inGrace
@@ -47,7 +48,7 @@ function SubscriptionIndicator({
       : daysRemaining <= 7
         ? `${daysRemaining}d left`
         : "Active";
-  const title = `${label} · ${isTrial ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left` : status}`;
+  const title = `${label}${!isTrial && tier ? ` (${planDisplayName(activePlan?.interval)})` : ""} · ${isTrial ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left` : status}`;
 
   return (
     <Link

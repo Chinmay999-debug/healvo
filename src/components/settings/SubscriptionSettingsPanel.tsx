@@ -22,8 +22,12 @@ import {
   formatPriceINR,
   getAccessProgress,
   getAccessWindow,
+  getClinicEntitlements,
   getClinicPlatformInvoices,
+  getWindowLengthDays,
   planDisplayName,
+  planTierName,
+  type ClinicEntitlements,
 } from "../../services/subscription";
 import { paymentMethodName } from "../../services/platformBilling";
 import type { PlatformInvoice, PlatformInvoiceStatus } from "../../types/subscription";
@@ -116,6 +120,7 @@ export function SubscriptionSettingsPanel() {
   const [invoices, setInvoices] = useState<PlatformInvoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [invoicesError, setInvoicesError] = useState(false);
+  const [entitlements, setEntitlements] = useState<ClinicEntitlements | null>(null);
 
   const loadInvoices = useCallback(async () => {
     if (!clinicId) return;
@@ -139,6 +144,23 @@ export function SubscriptionSettingsPanel() {
     void loadInvoices();
   }, [loadInvoices]);
 
+  // Feature access comes from the same server check the AI and WhatsApp
+  // backends enforce; re-read whenever the subscription changes.
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    getClinicEntitlements(clinicId)
+      .then((result) => {
+        if (!cancelled) setEntitlements(result);
+      })
+      .catch(() => {
+        if (!cancelled) setEntitlements(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, subscription]);
+
   useEffect(() => {
     if (checkout.outcome?.kind === "success") void loadInvoices();
   }, [checkout.outcome, loadInvoices]);
@@ -159,6 +181,15 @@ export function SubscriptionSettingsPanel() {
   const endDate = endsAt ? formatAccessDate(endsAt) : "";
   const nextPaymentDate = formatAccessDate(billing?.next_charge_at ?? billing?.gateway_start_at ?? endsAt ?? new Date());
   const planName = planDisplayName(subscription?.plan_interval);
+  const tierName = planTierName(subscription?.plan_code, subscription?.plan_name);
+  const planTitle = tierName ? `${tierName} · ${planName}` : `${planName} plan`;
+  const trialLength = getWindowLengthDays(accessWindow) ?? subscription?.trial_days ?? 15;
+  const isAnnualPlan = subscription?.plan_interval === "year";
+  const priceLabel = subscription
+    ? isAnnualPlan
+      ? `${formatPriceINR(subscription.base_price_paise)} / ${subscription.entitlement_months || 14} months`
+      : `${formatPriceINR(subscription.base_price_paise)} / month`
+    : null;
   const methodName = paymentMethodName(billing?.payment_method ?? null);
   const recurringPrice = formatPriceINR(subscription?.base_price_paise ?? MONTHLY_FALLBACK_PAISE);
   const monthlyLocked =
@@ -175,12 +206,12 @@ export function SubscriptionSettingsPanel() {
     ? {
         tone: "trial",
         label: "Free trial",
-        title: `${subscription?.trial_days ?? 15}-day free trial`,
+        title: `${trialLength}-day free trial`,
         caption: (
           <>
-            Every Healvo feature is unlocked. Your trial ends on{" "}
-            <strong className="font-semibold text-white">{endDate}</strong>. Pick a plan below before then
-            to keep going without a break.
+            Clinic management and the AI Assistant are unlocked. WhatsApp appointment confirmations come
+            with Premium. Your trial ends on <strong className="font-semibold text-white">{endDate}</strong>;
+            choose a plan before then to keep going without a break.
           </>
         ),
         endLabel: "Trial ends",
@@ -190,7 +221,7 @@ export function SubscriptionSettingsPanel() {
       ? {
           tone: "attention",
           label: halted ? "Action needed" : "Payment due",
-          title: `${planName} plan`,
+          title: planTitle,
           caption: (
             <>
               Paid through <strong className="font-semibold text-white">{endDate}</strong>.
@@ -203,10 +234,10 @@ export function SubscriptionSettingsPanel() {
         ? {
             tone: "active",
             label: "Auto-renews",
-            title: `${planName} plan`,
+            title: planTitle,
             caption: (
               <>
-                Renews on its own. Next payment of {recurringPrice} on{" "}
+                Renews automatically. Next payment of {recurringPrice} on{" "}
                 <strong className="font-semibold text-white">{nextPaymentDate}</strong>.
               </>
             ),
@@ -217,7 +248,7 @@ export function SubscriptionSettingsPanel() {
           ? {
               tone: endingSoon ? "attention" : "active",
               label: autoRenewOff ? "Auto-renewal off" : endingSoon ? "Ending soon" : "Active",
-              title: `${planName} plan`,
+              title: planTitle,
               // One-time plans never renew by themselves, so the date is phrased as a deadline.
               caption: (
                 <>
@@ -240,15 +271,36 @@ export function SubscriptionSettingsPanel() {
             };
 
   const facts: { label: string; value: string }[] = [];
-  if (accessWindow) {
-    facts.push({ label: isTrial ? "Trial started" : "Started", value: formatAccessDate(accessWindow.startsAt) });
+  if (isTrial || !hasPaidAccess) {
+    if (accessWindow) {
+      facts.push({ label: isTrial ? "Trial started" : "Started", value: formatAccessDate(accessWindow.startsAt) });
+    }
+    if (status.endValue) facts.push({ label: status.endLabel, value: status.endValue });
+  } else {
+    facts.push({ label: "Billing", value: planName });
+    if (priceLabel) facts.push({ label: "Price", value: priceLabel });
+    if (status.endValue) facts.push({ label: status.endLabel, value: status.endValue });
+    facts.push(
+      methodName
+        ? { label: "Payment method", value: methodName }
+        : accessWindow
+          ? { label: "Started", value: formatAccessDate(accessWindow.startsAt) }
+          : { label: "Plan", value: tierName ?? planName },
+    );
   }
-  if (status.endValue) {
-    facts.push({ label: status.endLabel, value: status.endValue });
-  }
-  if (methodName && facts.length < 3) {
-    facts.push({ label: "Payment method", value: methodName });
-  }
+
+  const entitlementChips =
+    entitlements && hasAccess
+      ? [
+          { label: "AI Assistant", enabled: entitlements.aiAssistant, icon: "ai" as const },
+          {
+            label: "WhatsApp confirmations",
+            enabled: entitlements.whatsapp,
+            icon: "whatsapp" as const,
+            note: entitlements.whatsapp ? undefined : isTrial ? "Premium only" : "Not included",
+          },
+        ]
+      : undefined;
 
   const attention = halted
     ? "Automatic payments stopped. Update your payment method to start them again."
@@ -258,11 +310,11 @@ export function SubscriptionSettingsPanel() {
         ? `Your ${endDate} payment didn't go through. We'll retry automatically, so there's nothing to do right now.`
         : null;
 
-  const plansHeading = autoRenewOn ? "Change plan" : mode === "renew" ? "Renew your plan" : "Choose a plan";
+  const plansHeading = autoRenewOn ? "Change plan" : mode === "renew" ? "Renew or change plan" : "Choose a plan";
   const plansSubtitle = autoRenewOn
     ? "Switching to annual turns off monthly auto-renewal at the end of your current month."
     : isTrial
-      ? "Your paid plan starts as soon as payment goes through."
+      ? "Your free trial runs until " + endDate + ". Your paid plan starts as soon as payment goes through."
       : hasPaidAccess
         ? `Anything you add starts after ${endDate}, so you don't lose any days.`
         : "Choose a plan to restore your clinic's access.";
@@ -278,6 +330,7 @@ export function SubscriptionSettingsPanel() {
         daysRemaining={daysRemaining}
         percentUsed={accessWindow ? (expired ? 100 : getAccessProgress(accessWindow)) : null}
         facts={facts}
+        entitlements={entitlementChips}
       />
 
       {checkout.outcome && (
@@ -320,6 +373,7 @@ export function SubscriptionSettingsPanel() {
             hasPaidTime={hasPaidAccess}
             autoRenewOn={autoRenewOn}
             monthlyLocked={monthlyLocked}
+            trialActive={isTrial}
           />
         </div>
       </Card>

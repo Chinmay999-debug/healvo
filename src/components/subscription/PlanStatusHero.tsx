@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { Check, MessageCircle, Minus, Sparkles, type LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export type PlanTone = "trial" | "active" | "attention" | "expired";
@@ -86,7 +87,14 @@ export interface PlanStatusHeroProps {
   /** Percent of the current window already elapsed; null when unknown. */
   percentUsed: number | null;
   facts: { label: string; value: string }[];
+  /** Server-reported feature access; omitted while unknown. */
+  entitlements?: { label: string; enabled: boolean; icon: "ai" | "whatsapp"; note?: string }[];
 }
+
+const ENTITLEMENT_ICONS: Record<"ai" | "whatsapp", LucideIcon> = {
+  ai: Sparkles,
+  whatsapp: MessageCircle,
+};
 
 export function PlanStatusHero({
   clinicName,
@@ -97,6 +105,7 @@ export function PlanStatusHero({
   daysRemaining,
   percentUsed,
   facts,
+  entitlements,
 }: PlanStatusHeroProps) {
   const accent = TONE_ACCENT[tone];
   const expired = tone === "expired";
@@ -153,11 +162,17 @@ export function PlanStatusHero({
         <dl
           className={cn(
             "relative mt-6 grid gap-y-4 border-t border-white/10 pt-4 sm:divide-x sm:divide-white/10",
-            facts.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2",
+            facts.length >= 4 ? "grid-cols-2 lg:grid-cols-4 lg:divide-x" : facts.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2",
           )}
         >
           {facts.map((fact, index) => (
-            <div key={fact.label} className={index > 0 ? "sm:pl-5" : undefined}>
+            <div
+              key={fact.label}
+              className={cn(
+                facts.length >= 4 ? index > 0 && "lg:pl-5" : index > 0 && "sm:pl-5",
+                facts.length >= 4 && index % 2 === 1 && "pl-4",
+              )}
+            >
               <dt className="text-[11px] font-semibold tracking-[0.06em] text-white/45 uppercase">
                 {fact.label}
               </dt>
@@ -167,6 +182,35 @@ export function PlanStatusHero({
             </div>
           ))}
         </dl>
+      )}
+
+      {entitlements && entitlements.length > 0 && (
+        <ul className="relative mt-5 flex flex-wrap gap-2" aria-label="Features on this plan">
+          {entitlements.map(({ label, enabled, icon, note }) => {
+            const Icon = ENTITLEMENT_ICONS[icon];
+            return (
+              <li
+                key={label}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[12px] font-semibold ring-1 ring-inset",
+                  enabled ? "bg-[#2dd4bf]/12 text-white ring-[#2dd4bf]/35" : "bg-white/[0.04] text-white/50 ring-white/10",
+                )}
+              >
+                <Icon size={13} strokeWidth={2.25} className={enabled ? "text-[#5eead4]" : "text-white/40"} />
+                {label}
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-0.5 text-[11px] font-bold",
+                    enabled ? "text-[#5eead4]" : "text-white/40",
+                  )}
+                >
+                  {enabled ? <Check size={11} strokeWidth={3} /> : <Minus size={11} strokeWidth={3} />}
+                  {note ?? (enabled ? "On" : "Not included")}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );

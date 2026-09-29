@@ -34,7 +34,7 @@ export function SubscriptionExpiredScreen({
 
   return (
     <div className="min-h-screen bg-[var(--color-canvas)] px-4 py-6 sm:py-10">
-      <div className="mx-auto w-full max-w-2xl">
+      <div className="mx-auto w-full max-w-4xl">
         <div className="flex items-center justify-between gap-3">
           <Logo />
           <Button variant="ghost" onClick={() => void signOut()}>

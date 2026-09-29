@@ -182,7 +182,44 @@ export function planDisplayName(interval: string | null | undefined): string {
   return interval === "year" ? "Annual" : "Monthly";
 }
 
+/** Customer-facing tier ("Core" / "Premium") for a plan, from its code or name. */
+export function planTierName(
+  planCode: string | null | undefined,
+  planName?: string | null,
+): string | null {
+  if (planCode?.startsWith("premium")) return "Premium";
+  if (planCode?.startsWith("core")) return "Core";
+  const tier = planName?.replace(/\s*(Monthly|Annual)$/i, "").trim();
+  return tier || null;
+}
+
+/** Length of an access window in whole days (e.g. a 15-day trial or a 30-day pilot). */
+export function getWindowLengthDays(window: { startsAt: Date; endsAt: Date } | null): number | null {
+  if (!window) return null;
+  const days = Math.round((window.endsAt.getTime() - window.startsAt.getTime()) / (1000 * 60 * 60 * 24));
+  return days > 0 ? days : null;
+}
+
 // Data Access RPCs ------------------------------------------------------------
+
+export interface ClinicEntitlements {
+  aiAssistant: boolean;
+  whatsapp: boolean;
+}
+
+/**
+ * Reads the clinic's feature entitlements from the server's has_entitlement()
+ * — the same check the AI and WhatsApp backends enforce. Display only.
+ */
+export async function getClinicEntitlements(clinicId: string): Promise<ClinicEntitlements> {
+  const [ai, whatsapp] = await Promise.all([
+    supabase.rpc("has_entitlement", { p_clinic_id: clinicId, p_feature: "ai_assistant" }),
+    supabase.rpc("has_entitlement", { p_clinic_id: clinicId, p_feature: "whatsapp" }),
+  ]);
+  if (ai.error) throw ai.error;
+  if (whatsapp.error) throw whatsapp.error;
+  return { aiAssistant: ai.data === true, whatsapp: whatsapp.data === true };
+}
 
 /**
  * Fetches the current subscription for a clinic using the authorized RLS/RPC layer.
