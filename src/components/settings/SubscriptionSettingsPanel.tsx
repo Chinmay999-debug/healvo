@@ -11,7 +11,7 @@ import {
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge, type BadgeTone } from "../ui/Badge";
-import { MONTHLY_PLAN_CODE, PlanPicker } from "../subscription/PlanPicker";
+import { CORE_PLAN_CODE, PREMIUM_PLAN_CODE, PlanPicker } from "../subscription/PlanPicker";
 import { CheckoutOutcomeBanner } from "../subscription/CheckoutOutcomeBanner";
 import { PlanStatusHero, type PlanTone } from "../subscription/PlanStatusHero";
 import { useAuth } from "../../state/authContext";
@@ -150,7 +150,7 @@ export function SubscriptionSettingsPanel() {
   const halted = billing?.needs_reauthorization === true && gatewayStatus === "halted";
   const renewalCompleted = billing?.needs_reauthorization === true && gatewayStatus === "completed";
   const hasPaidAccess = hasAccess && !isTrial;
-  const autoRenewOff = recurringMonthly && hasPaidAccess && !autoRenewOn && subscription?.plan_code === MONTHLY_PLAN_CODE;
+  const autoRenewOff = recurringMonthly && hasPaidAccess && !autoRenewOn && (subscription?.plan_code === CORE_PLAN_CODE || subscription?.plan_code === PREMIUM_PLAN_CODE);
   const endingSoon = hasPaidAccess && daysRemaining <= 7 && !autoRenewOn;
   const expired = !hasAccess;
   const hasPaidBefore = invoices.some((invoice) => invoice.status === "paid");

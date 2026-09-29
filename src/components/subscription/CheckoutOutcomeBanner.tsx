@@ -47,7 +47,7 @@ export function CheckoutOutcomeBanner({
       : "Payment received. Your plan is active.";
   } else if (outcome.kind === "autorenew_on") {
     message = outcome.firstChargeAt
-      ? `Automatic renewal is on. Your first payment of ₹499 is on ${formatAccessDate(outcome.firstChargeAt)}.`
+      ? `Automatic renewal is on. Your first payment is on ${formatAccessDate(outcome.firstChargeAt)}.`
       : "Automatic renewal is on.";
   } else if (outcome.kind === "autorenew_off") {
     const until = outcome.accessUntil ?? endsAt;

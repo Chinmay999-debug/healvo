@@ -1,110 +1,58 @@
 import { useEffect, useState } from "react";
-import { Check, LoaderCircle, Lock } from "lucide-react";
+import { Check, LoaderCircle, Lock, Zap } from "lucide-react";
 import { Button } from "../ui/Button";
 import { cn } from "../../lib/utils";
 import { formatPriceINR, getActiveSubscriptionPlans } from "../../services/subscription";
 import type { CheckoutPhase } from "../../state/useSubscriptionCheckout";
 
-export const MONTHLY_PLAN_CODE = "healvo_dental_monthly";
-export const ANNUAL_PLAN_CODE = "healvo_dental_annual";
+export const CORE_PLAN_CODE = "core";
+export const PREMIUM_PLAN_CODE = "premium";
+export const CORE_ANNUAL_PLAN_CODE = "core_annual";
+export const PREMIUM_ANNUAL_PLAN_CODE = "premium_annual";
 
 interface PlanDisplay {
   code: string;
   name: string;
   pricePaise: number;
   periodLabel: string;
-  accessMonths: number;
 }
 
-// Locked commercial terms, shown until the live catalog loads. What is actually
-// charged always comes from subscription_plans on the server.
 const DEFAULT_PLANS: Record<string, PlanDisplay> = {
-  [MONTHLY_PLAN_CODE]: {
-    code: MONTHLY_PLAN_CODE,
-    name: "Monthly",
-    pricePaise: 49900,
-    periodLabel: "month",
-    accessMonths: 1,
-  },
-  [ANNUAL_PLAN_CODE]: {
-    code: ANNUAL_PLAN_CODE,
-    name: "Annual",
-    pricePaise: 598800,
-    periodLabel: "year",
-    accessMonths: 14,
-  },
+  [CORE_PLAN_CODE]: { code: CORE_PLAN_CODE, name: "Core", pricePaise: 49900, periodLabel: "month" },
+  [PREMIUM_PLAN_CODE]: { code: PREMIUM_PLAN_CODE, name: "Premium", pricePaise: 99900, periodLabel: "month" },
+  [CORE_ANNUAL_PLAN_CODE]: { code: CORE_ANNUAL_PLAN_CODE, name: "Core", pricePaise: 598800, periodLabel: "year" },
+  [PREMIUM_ANNUAL_PLAN_CODE]: { code: PREMIUM_ANNUAL_PLAN_CODE, name: "Premium", pricePaise: 1198800, periodLabel: "year" },
 };
 
-// One product, one feature set — the plans differ only in how you pay. Kept in
-// step with the pricing section on the marketing site.
-const INCLUDED = [
+const CORE_INCLUDED = [
   "FDI dental chart, status and notes per tooth",
   "Consultations with prescriptions",
   "Billing: UPI, cash, card, part payments",
   "Online booking page for patients",
-  "Healvo AI clinic assistant",
-  "Documents, X-rays and photos",
-  "Doctor and reception logins",
-  "Reports and follow-ups",
 ];
 
-function usePlanCatalog() {
-  const [plans, setPlans] = useState(DEFAULT_PLANS);
-
-  useEffect(() => {
-    let cancelled = false;
-    getActiveSubscriptionPlans()
-      .then((rows) => {
-        if (cancelled) return;
-        setPlans((current) => {
-          const next = { ...current };
-          for (const row of rows) {
-            if (next[row.code]) {
-              next[row.code] = {
-                ...next[row.code],
-                pricePaise: row.base_price_paise,
-                accessMonths: row.entitlement_months,
-              };
-            }
-          }
-          return next;
-        });
-      })
-      .catch(() => {
-        // Keep the locked defaults; checkout still prices from the server.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return plans;
-}
+const PREMIUM_INCLUDED = [
+  ...CORE_INCLUDED,
+  "Healvo AI clinic assistant",
+  "WhatsApp Cloud API integration",
+];
 
 function busyLabel(phase: CheckoutPhase) {
-  if (phase === "confirming") return "Confirming payment…";
-  if (phase === "paying") return "Waiting for payment…";
-  return "Opening checkout…";
+  if (phase === "initializing") return "Starting...";
+  if (phase === "waiting_for_gateway") return "Loading secure checkout...";
+  if (phase === "verifying") return "Confirming payment...";
+  return "Please wait...";
 }
 
-const monthsOfAccess = (months: number) => `${months} month${months === 1 ? "" : "s"} of access`;
-
 export interface PlanPickerProps {
-  /** "choose" for a first purchase, "renew" once the clinic has paid before. */
   mode: "choose" | "renew";
-  /** The plan the clinic is currently paying for, if any. */
   currentPlanCode?: string | null;
   phase: CheckoutPhase;
   pendingPlanCode: string | null;
   onSelect: (planCode: string) => void;
-  /** Monthly is sold as an automatically renewing subscription. */
   recurringMonthly?: boolean;
-  /** The clinic still has paid access (monthly then turns on auto-renewal). */
   hasPaidTime?: boolean;
-  /** Monthly auto-renewal is already on. */
   autoRenewOn?: boolean;
-  /** Annual holder outside the final 30 days: monthly is not offered yet. */
-  monthlyLocked?: boolean;
 }
 
 export function PlanPicker({
@@ -116,62 +64,119 @@ export function PlanPicker({
   recurringMonthly = false,
   hasPaidTime = false,
   autoRenewOn = false,
-  monthlyLocked = false,
 }: PlanPickerProps) {
-  const plans = usePlanCatalog();
-  const monthly = plans[MONTHLY_PLAN_CODE];
-  const annual = plans[ANNUAL_PLAN_CODE];
+  const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
+  const [plans, setPlans] = useState<Record<string, PlanDisplay>>(DEFAULT_PLANS);
 
-  const monthlyAction = (): { label: string; disabled: boolean; note?: string } => {
-    if (!recurringMonthly) return { label: `${mode === "choose" ? "Choose" : "Renew"} monthly`, disabled: false };
-    if (autoRenewOn) return { label: "Auto-renewal is on", disabled: true };
-    if (monthlyLocked) {
-      return {
-        label: "Turn on auto-renewal",
-        disabled: true,
-        note: "Available in the last 30 days of your annual plan.",
-      };
+  useEffect(() => {
+    getActiveSubscriptionPlans().then((apiPlans) => {
+      const mapped: Record<string, PlanDisplay> = {};
+      for (const p of apiPlans) {
+        if ([CORE_PLAN_CODE, PREMIUM_PLAN_CODE, CORE_ANNUAL_PLAN_CODE, PREMIUM_ANNUAL_PLAN_CODE].includes(p.code)) {
+          mapped[p.code] = {
+            code: p.code,
+            name: p.name.replace(" Monthly", "").replace(" Annual", ""),
+            pricePaise: p.basePricePaise,
+            periodLabel: p.interval,
+          };
+        }
+      }
+      if (mapped[CORE_PLAN_CODE] && mapped[PREMIUM_PLAN_CODE]) {
+        setPlans(mapped);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const coreCode = billingInterval === "monthly" ? CORE_PLAN_CODE : CORE_ANNUAL_PLAN_CODE;
+  const premiumCode = billingInterval === "monthly" ? PREMIUM_PLAN_CODE : PREMIUM_ANNUAL_PLAN_CODE;
+
+  const core = plans[coreCode] || DEFAULT_PLANS[coreCode];
+  const premium = plans[premiumCode] || DEFAULT_PLANS[premiumCode];
+
+  const getAction = (planCode: string) => {
+    if (currentPlanCode === planCode && autoRenewOn && billingInterval === "monthly") {
+      return { label: "Auto-renewal is on", disabled: true };
     }
-    return { label: hasPaidTime ? "Turn on auto-renewal" : "Start monthly plan", disabled: false };
+    // For annual purchases, even if they currently hold the annual plan, they can manually renew it early.
+    // If they hold monthly and click annual, they are switching to annual.
+    const isPremium = planCode === PREMIUM_PLAN_CODE || planCode === PREMIUM_ANNUAL_PLAN_CODE;
+    
+    if (currentPlanCode && currentPlanCode !== planCode) {
+      if (planCode === CORE_ANNUAL_PLAN_CODE || planCode === PREMIUM_ANNUAL_PLAN_CODE) {
+        return { label: `Switch to Annual ${isPremium ? "Premium" : "Core"}`, disabled: false };
+      }
+      return { label: `Switch to ${isPremium ? "Premium" : "Core"}`, disabled: false };
+    }
+    
+    if (planCode === CORE_ANNUAL_PLAN_CODE || planCode === PREMIUM_ANNUAL_PLAN_CODE) {
+      return { label: `Pay for 12 months, get 14 months`, disabled: false };
+    }
+    
+    return { label: `Start ${isPremium ? "Premium" : "Core"}`, disabled: false };
   };
-
-  const annualLabel = () => {
-    if (currentPlanCode === MONTHLY_PLAN_CODE) return "Switch to annual";
-    return `${mode === "choose" ? "Choose" : "Renew"} annual`;
-  };
-
-  // Both figures come from the live catalog, so they stay honest if pricing moves.
-  const perMonthPaise = Math.round(annual.pricePaise / Math.max(1, annual.accessMonths));
-  const savingsPaise = monthly.pricePaise * annual.accessMonths - annual.pricePaise;
 
   const options = [
     {
-      plan: monthly,
+      plan: core,
       featured: false,
-      ribbon: null as string | null,
-      tagline: recurringMonthly ? "Pay as you go, month by month" : "Try Healvo month by month",
-      priceNote: recurringMonthly ? "Charged automatically every month" : "One payment, no auto-renewal",
-      highlights: recurringMonthly
-        ? ["15-day free trial · no card required", "Renews automatically each month"]
-        : [monthsOfAccess(monthly.accessMonths), "Renew whenever you're ready"],
-      action: monthlyAction(),
+      ribbon: null,
+      tagline: "Essential tools to run your clinic",
+      priceNote: billingInterval === "monthly" ? "Charged automatically every month" : "One-time payment for 14 months access",
+      highlights: CORE_INCLUDED,
+      action: getAction(coreCode),
     },
     {
-      plan: annual,
+      plan: premium,
       featured: true,
-      ribbon: savingsPaise > 0 ? `Save ${formatPriceINR(savingsPaise)}` : "Best value",
-      tagline: "The whole year sorted, in one payment",
-      priceNote: `About ${formatPriceINR(perMonthPaise)} a month`,
+      ribbon: "Most Popular",
+      tagline: "Advanced AI and WhatsApp automation",
+      priceNote: billingInterval === "monthly" ? "Charged automatically every month" : "One-time payment for 14 months access",
       highlights: [
-        `${monthsOfAccess(annual.accessMonths)}, pay for 12 and get 2 free`,
-        "One payment, nothing renews on its own",
+        "Everything in Core, plus:",
+        "Healvo AI clinic assistant",
+        "Automated WhatsApp confirmations"
       ],
-      action: { label: annualLabel(), disabled: false } as { label: string; disabled: boolean; note?: string },
+      action: getAction(premiumCode),
     },
   ];
 
   return (
     <div>
+      <div className="flex justify-center mb-8">
+        <div className="bg-[var(--color-surface)] p-1 rounded-lg inline-flex items-center border border-[var(--color-border)] shadow-sm">
+          <button
+            type="button"
+            className={cn(
+              "px-4 py-1.5 text-[13.5px] font-semibold rounded-md transition-colors",
+              billingInterval === "monthly"
+                ? "bg-[var(--color-ink)] text-[var(--color-canvas)] shadow"
+                : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+            )}
+            onClick={() => setBillingInterval("monthly")}
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "px-4 py-1.5 text-[13.5px] font-semibold rounded-md transition-colors flex items-center gap-1.5",
+              billingInterval === "annual"
+                ? "bg-[var(--color-ink)] text-[var(--color-canvas)] shadow"
+                : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+            )}
+            onClick={() => setBillingInterval("annual")}
+          >
+            Annual
+            <span className={cn(
+              "text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded",
+              billingInterval === "annual" ? "bg-[var(--color-canvas)] text-[var(--color-ink)]" : "bg-[var(--color-mint-bg)] text-[var(--color-mint-text)]"
+            )}>
+              Get 2 Mo Free
+            </span>
+          </button>
+        </div>
+      </div>
+
       <div className="grid items-start gap-4 sm:grid-cols-2">
         {options.map(({ plan, featured, ribbon, tagline, priceNote, highlights, action }) => {
           const isCurrent = plan.code === currentPlanCode;
@@ -182,7 +187,7 @@ export function PlanPicker({
             <div
               key={plan.code}
               className={cn(
-                "relative flex flex-col rounded-xl border p-5 transition-shadow",
+                "relative flex flex-col rounded-xl border p-5 transition-shadow h-full",
                 featured
                   ? "border-[var(--color-teal)] bg-[var(--color-surface)] shadow-[0_0_0_1px_var(--color-teal),0_14px_32px_-22px_rgba(14,165,183,0.75)]"
                   : "border-[var(--color-border)] bg-[var(--color-surface)]",
@@ -196,10 +201,11 @@ export function PlanPicker({
               )}
 
               <div className="flex min-h-[22px] items-center justify-between gap-2">
-                <span className="text-[15px] font-extrabold tracking-tight text-[var(--color-ink)]">
+                <span className="text-[15px] font-extrabold tracking-tight text-[var(--color-ink)] flex items-center gap-1.5">
                   {plan.name}
+                  {featured && <Zap size={14} className="text-[var(--color-teal)] fill-[var(--color-teal)]" />}
                 </span>
-                {isCurrent && (
+                {isCurrent && billingInterval === "monthly" && (
                   <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-mint-bg)] px-2 py-0.5 text-[11.5px] font-bold text-[var(--color-mint-text)]">
                     <Check size={11} strokeWidth={3} />
                     Current plan
@@ -212,15 +218,18 @@ export function PlanPicker({
                 <span className="text-[34px] leading-none font-extrabold tracking-tight text-[var(--color-ink)] tabular-nums">
                   {formatPriceINR(plan.pricePaise)}
                 </span>
-                <span className="text-[13.5px] font-semibold text-[var(--color-muted)]">
-                  / {plan.periodLabel}
-                </span>
               </div>
               <p className="mt-1.5 text-[12.5px] text-[var(--color-muted)]">{priceNote}</p>
+              
+              {billingInterval === "annual" && (
+                <div className="mt-2 text-[13px] font-bold text-[var(--color-mint-text)] bg-[var(--color-mint-bg)] inline-block px-2 py-1 rounded">
+                  Pay for 12 months, get 14 months
+                </div>
+              )}
 
               <ul className="mt-4 space-y-2 border-t border-[var(--color-border)] pt-4">
-                {highlights.map((line) => (
-                  <li key={line} className="flex gap-2.5 text-[13px] leading-snug text-[var(--color-ink)]">
+                {highlights.map((line, i) => (
+                  <li key={i} className="flex gap-2.5 text-[13px] leading-snug text-[var(--color-ink)]">
                     <Check
                       size={15}
                       strokeWidth={2.75}
@@ -252,33 +261,14 @@ export function PlanPicker({
                   </>
                 )}
               </Button>
-              {action.note && (
-                <p className="mt-2 text-center text-[12px] text-[var(--color-muted)]">{action.note}</p>
-              )}
             </div>
           );
         })}
       </div>
-
-      <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-canvas)] p-4 sm:p-5">
-        <p className="text-[11px] font-bold tracking-[0.12em] text-[var(--color-muted)] uppercase">
-          Included in every plan
-        </p>
-        <ul className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-          {INCLUDED.map((item) => (
-            <li
-              key={item}
-              className="flex gap-2.5 text-[13px] leading-snug text-[var(--color-ink)]"
-            >
-              <Check size={15} strokeWidth={2.75} className="mt-px shrink-0 text-[var(--color-teal)]" />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-4 text-[12px] text-[var(--color-muted)]">
-          Prices in INR, plus applicable GST. No feature tiers and nothing to unlock later.
-        </p>
-      </div>
+      
+      <p className="mt-5 text-center text-[12px] text-[var(--color-muted)]">
+        Prices in INR, plus applicable GST. Start with a 15-day free trial on Premium, no credit card required.
+      </p>
     </div>
   );
 }
