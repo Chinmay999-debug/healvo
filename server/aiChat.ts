@@ -25,8 +25,6 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
 export function createHealvoAiMiddleware(
   env: Record<string, string | undefined>,
 ): Connect.NextHandleFunction {
-  const apiKey = env.GROQ_API_KEY;
-
   return async function healvoAiMiddleware(req, res, next) {
     const url = req.url?.split("?")[0];
     if (url !== "/api/ai/chat") {
@@ -54,7 +52,7 @@ export function createHealvoAiMiddleware(
       return;
     }
 
-    const result = await runHealvoAiChat(apiKey, body);
+    const result = await runHealvoAiChat(env, body, req.headers.authorization);
     sendJson(res, result.status, result.body);
   };
 }

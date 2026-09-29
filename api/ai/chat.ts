@@ -35,6 +35,6 @@ export default async function handler(req: IncomingMessageWithBody, res: ServerR
     }
   }
 
-  const result = await runHealvoAiChat(process.env.GROQ_API_KEY, body);
+  const result = await runHealvoAiChat(process.env, body, req.headers.authorization);
   sendJson(res, result.status, result.body);
 }

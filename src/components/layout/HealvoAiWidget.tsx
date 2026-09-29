@@ -5,8 +5,13 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { SendHorizontal, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowRight, Lock, SendHorizontal, X } from "lucide-react";
 import { useClinicData } from "../../state/clinicData";
+import { useAuth } from "../../state/authContext";
+import { useSubscription } from "../../state/subscriptionContext";
+import { getClinicEntitlements } from "../../services/subscription";
+import { supabase } from "../../lib/supabaseClient";
 import { buildHealvoAiContext } from "../../lib/aiContext";
 import { cn } from "../../lib/utils";
 import { HealvoAiMark } from "./HealvoAiMark";
@@ -26,11 +31,6 @@ const SUGGESTED_PROMPTS = [
 
 const GENERIC_ERROR = "Sorry, I couldn't reach Healvo AI right now. Please try again.";
 
-const HINT_OPENED_KEY = "healvo-ai-opened";
-const HINT_SHOW_DELAY_MS = 1200;
-const HINT_VISIBLE_MS = 4500;
-const HINT_MIN_GAP_MS = 20_000;
-
 function createId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -44,12 +44,155 @@ function getGreetingName(fullName: string) {
   return match ? match[1] : fullName.split(" ")[0];
 }
 
+export type AiAccess = "enabled" | "locked" | "hidden";
+
+/** The last entitlement lookup that actually resolved, tagged with its clinic. */
+export interface AiLookup {
+  clinicId: string;
+  result: boolean | "error";
+}
+
 /**
- * Global floating Healvo AI launcher + chat panel. Mounted once in AppShell
- * so it's available on every clinic page without navigating away from the
- * current route. Replaces the old sidebar "Healvo AI" card.
+ * Presentation only: the server (/api/ai/chat -> has_entitlement) is the real
+ * gate. Trial/Premium see the assistant, a clinic without the AI entitlement
+ * (Core) sees a locked launcher with the Premium upgrade, and anything else
+ * (no access, nothing resolved yet for this clinic, lookup failed) shows nothing.
+ * A lookup for a different clinic is never reused.
+ */
+export function resolveAiAccess(state: {
+  loading: boolean;
+  hasAccess: boolean;
+  clinicId: string | undefined;
+  lookup: AiLookup | null;
+}): AiAccess {
+  const { loading, hasAccess, clinicId, lookup } = state;
+  if (loading || !hasAccess || !clinicId || !lookup || lookup.clinicId !== clinicId) return "hidden";
+  if (lookup.result === "error") return "hidden";
+  return lookup.result ? "enabled" : "locked";
+}
+
+/**
+ * Every page renders its own AppShell, so this widget remounts on navigation.
+ * The last lookup that resolved is kept here so a remount starts from the
+ * known state instead of flashing hidden. It is still re-read on every mount
+ * and subscription change, and never applied to a different clinic.
+ */
+let lastResolvedLookup: AiLookup | null = null;
+
+function useAiAccess(): AiAccess {
+  const { activeClinic } = useAuth();
+  const { subscription, hasAccess, loading } = useSubscription();
+  const clinicId = activeClinic?.id;
+  const [lookup, setLookup] = useState<AiLookup | null>(() => lastResolvedLookup);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    // No reset while this runs: the previous resolved result stays on screen
+    // (visible, locked or hidden) and is replaced only when this lookup settles.
+    // It's re-read on every subscription change, so it's never stale for long.
+    getClinicEntitlements(clinicId)
+      .then((entitlements) => {
+        const resolved: AiLookup = { clinicId, result: entitlements.aiAssistant };
+        lastResolvedLookup = resolved;
+        if (!cancelled) setLookup(resolved);
+      })
+      .catch(() => {
+        const failed: AiLookup = { clinicId, result: "error" };
+        lastResolvedLookup = failed;
+        if (!cancelled) setLookup(failed);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-read whenever the subscription changes (upgrade, renewal, expiry).
+  }, [clinicId, subscription]);
+
+  return resolveAiAccess({ loading, hasAccess, clinicId, lookup });
+}
+
+/**
+ * Global floating Healvo AI launcher. Mounted once in AppShell so it's
+ * available on every clinic page without navigating away from the current
+ * route. Replaces the old sidebar "Healvo AI" card.
  */
 export function HealvoAiWidget() {
+  const access = useAiAccess();
+  if (access === "enabled") return <HealvoAiChat />;
+  if (access === "locked") return <HealvoAiLocked />;
+  return null;
+}
+
+/** Launcher + card for clinics whose plan doesn't include Healvo AI. */
+function HealvoAiLocked() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <>
+      <div className="pointer-events-none fixed right-3 bottom-3 z-[45] sm:right-6 sm:bottom-6">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-label={open ? "Close Healvo AI" : "Healvo AI, included with Premium"}
+          aria-expanded={open}
+          title="Healvo AI is included with Premium"
+          className="pointer-events-auto relative flex h-12 w-12 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-teal)] shadow-xl outline-none transition-transform duration-150 active:scale-95 focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]/50 sm:h-14 sm:w-14"
+        >
+          {open ? <X size={20} strokeWidth={2} /> : <HealvoAiMark size={20} />}
+          {!open && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-ink-solid)] text-[var(--color-ink-solid-text)] ring-2 ring-[var(--color-canvas)]">
+              <Lock size={10} strokeWidth={2.75} />
+            </span>
+          )}
+        </button>
+      </div>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="false"
+          aria-label="Healvo AI"
+          className="healvo-panel-in fixed right-3 bottom-[72px] z-[45] w-[calc(100vw-24px)] max-w-[330px] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4 shadow-xl sm:right-6 sm:bottom-24"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-mint-bg)] text-[var(--color-teal)]">
+              <HealvoAiMark size={16} />
+            </div>
+            <span className="text-[13.5px] font-bold text-[var(--color-ink)]">Healvo AI</span>
+            <span className="rounded-full bg-[var(--color-teal)]/10 px-2 py-0.5 text-[11px] font-bold text-[var(--color-teal)]">
+              Premium
+            </span>
+          </div>
+          <p className="mt-3 text-[13px] leading-relaxed text-[var(--color-muted)]">
+            Ask about today's schedule, who's waiting and what you've collected. Healvo AI is included with the
+            Premium plan.
+          </p>
+          <Link
+            to="/settings/subscription"
+            onClick={() => setOpen(false)}
+            className="mt-3.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-ink-solid)] px-3.5 py-2.5 text-[13px] font-bold text-[var(--color-ink-solid-text)] transition-colors hover:bg-[var(--color-ink-solid-hover)]"
+          >
+            See Premium plans
+            <ArrowRight size={14} strokeWidth={2.5} />
+          </Link>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Launcher + chat panel for clinics entitled to Healvo AI. */
+function HealvoAiChat() {
+  const { activeClinic } = useAuth();
   const { clinicSettings, todaysVisits, waitingCount, patients, bills, doctorProfile } =
     useClinicData();
 
@@ -59,64 +202,9 @@ export function HealvoAiWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingRetry, setPendingRetry] = useState<ChatMessage[] | null>(null);
-  const [hintVisible, setHintVisible] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const openRef = useRef(open);
-  useEffect(() => {
-    openRef.current = open;
-  }, [open]);
-
-  // Discovery hint: slides out briefly whenever there's a natural "coming
-  // back to this" moment — opening the page and returning to this browser
-  // tab — throttled so quick tab-flicking or in-app navigation can't spam
-  // it. Stops for good once the user has actually opened Healvo AI at
-  // least once (remembered in localStorage) — at that point they know it's
-  // there; hover can still reveal it any time, see the hint button's
-  // classes.
-  const hintTimersRef = useRef<{ show?: ReturnType<typeof setTimeout>; hide?: ReturnType<typeof setTimeout> }>({});
-  const lastHintShownAtRef = useRef(0);
-
-  useEffect(() => {
-    function clearHintTimers() {
-      clearTimeout(hintTimersRef.current.show);
-      clearTimeout(hintTimersRef.current.hide);
-    }
-
-    function playHint() {
-      let openedBefore = false;
-      try {
-        openedBefore = localStorage.getItem(HINT_OPENED_KEY) === "1";
-      } catch {
-        // localStorage unavailable (private mode, etc.) — skip the hint.
-      }
-      if (openedBefore || openRef.current) return;
-      if (Date.now() - lastHintShownAtRef.current < HINT_MIN_GAP_MS) return;
-
-      clearHintTimers();
-      hintTimersRef.current.show = setTimeout(() => {
-        if (openRef.current) return;
-        setHintVisible(true);
-        lastHintShownAtRef.current = Date.now();
-      }, HINT_SHOW_DELAY_MS);
-      hintTimersRef.current.hide = setTimeout(() => {
-        setHintVisible(false);
-      }, HINT_SHOW_DELAY_MS + HINT_VISIBLE_MS);
-    }
-
-    playHint();
-
-    function onVisibilityChange() {
-      if (document.visibilityState === "visible") playHint();
-    }
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      clearHintTimers();
-    };
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -153,11 +241,16 @@ export function HealvoAiWidget() {
         patients,
         bills,
       });
-
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const res = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
+          clinic_id: activeClinic?.id,
           messages: nextMessages.map(({ role, content }) => ({ role, content })),
           context,
         }),
@@ -166,14 +259,18 @@ export function HealvoAiWidget() {
       const data = (await res.json().catch(() => null)) as { reply?: string; error?: string } | null;
 
       if (!res.ok || !data?.reply) {
-        throw new Error(data?.error ?? "request_failed");
+        throw Object.assign(new Error(data?.error ?? "request_failed"), { status: res.status });
       }
 
       setMessages((prev) => [...prev, { id: createId(), role: "assistant", content: data.reply! }]);
       setPendingRetry(null);
-    } catch {
-      setError(GENERIC_ERROR);
-      setPendingRetry(nextMessages);
+    } catch (err) {
+      // 401/403/429 carry a message meant for the user (sign in again, plan
+      // doesn't include AI, slow down); anything else is a generic failure.
+      const status = (err as { status?: number }).status;
+      const userFacing = status === 401 || status === 403 || status === 429;
+      setError(userFacing && err instanceof Error ? err.message : GENERIC_ERROR);
+      setPendingRetry(status === 401 || status === 403 ? null : nextMessages);
     } finally {
       setIsLoading(false);
     }
@@ -205,23 +302,8 @@ export function HealvoAiWidget() {
     }
   }
 
-  function markOpened() {
-    setHintVisible(false);
-    clearTimeout(hintTimersRef.current.show);
-    clearTimeout(hintTimersRef.current.hide);
-    try {
-      localStorage.setItem(HINT_OPENED_KEY, "1");
-    } catch {
-      // Best-effort only.
-    }
-  }
-
   function handleToggle() {
-    setOpen((o) => {
-      const next = !o;
-      if (next) markOpened();
-      return next;
-    });
+    setOpen((o) => !o);
   }
 
   const greetingName = getGreetingName(doctorProfile.name);
@@ -243,13 +325,13 @@ export function HealvoAiWidget() {
           group-hover on the hint still activates from hovering that button,
           since CSS :hover propagates to ancestors regardless of the
           ancestor's own pointer-events value. */}
-      <div className="group pointer-events-none fixed right-4 bottom-4 z-[45] flex items-center gap-2 sm:right-6 sm:bottom-6">
+      <div className="group pointer-events-none fixed right-3 bottom-3 z-[45] flex items-center gap-2 sm:right-6 sm:bottom-6">
         {!open && (
           <div
             aria-hidden="true"
             className={cn(
               "pointer-events-none flex flex-col items-start whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3.5 py-2.5 text-left shadow-xl transition-all duration-300 ease-out motion-reduce:transition-none",
-              hintVisible ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0",
+              "translate-x-2 opacity-0",
               "pointer-fine:group-hover:translate-x-0 pointer-fine:group-hover:opacity-100",
             )}
           >
@@ -265,7 +347,7 @@ export function HealvoAiWidget() {
           onClick={handleToggle}
           aria-label={open ? "Close Healvo AI" : "Open Healvo AI"}
           title="Healvo AI"
-          className="pointer-events-auto flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--color-teal)] text-white shadow-xl outline-none transition-transform duration-150 hover:bg-[#0c93a3] active:scale-95 focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]/50"
+          className="pointer-events-auto flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--color-teal)] text-white shadow-xl sm:h-14 sm:w-14 outline-none transition-transform duration-150 hover:bg-[#0c93a3] active:scale-95 focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]/50"
         >
           {open ? <X size={22} strokeWidth={2} /> : <HealvoAiMark size={22} />}
         </button>
