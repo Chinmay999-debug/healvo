@@ -19,6 +19,19 @@ function overlaps(a: BreakPeriod, b: BreakPeriod): boolean {
 }
 
 /**
+ * Validates the clinic's opening/closing times. Overnight hours aren't
+ * supported, so closing must be strictly after opening — the same rule the
+ * database enforces (clinics_closing_after_opening_check). Returns a short
+ * user-facing message, or null when the hours are valid.
+ */
+export function validateClinicHours(openingTime: string, closingTime: string): string | null {
+  if (timeToMinutes(closingTime) <= timeToMinutes(openingTime)) {
+    return "Closing time must be later than opening time.";
+  }
+  return null;
+}
+
+/**
  * Validates a single break against clinic hours and every other break.
  * Returns a short user-facing message, or null when the break is valid.
  */

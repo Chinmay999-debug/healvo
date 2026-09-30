@@ -4,7 +4,7 @@ import { Button } from "../ui/Button";
 import { inputClass } from "../ui/fieldStyles";
 import { useClinicData } from "../../state/clinicData";
 import { WEEKDAYS, type BreakPeriod, type Weekday } from "../../data/mockData";
-import { validateBreak } from "../../lib/appointmentHours";
+import { validateBreak, validateClinicHours } from "../../lib/appointmentHours";
 import { cn, getErrorMessage } from "../../lib/utils";
 
 const timeSelectClass =
@@ -75,9 +75,10 @@ export function AppointmentsSettingsPanel() {
     ),
   );
   const hasInvalidBreak = breakErrors.some((error) => error !== null);
+  const hoursError = validateClinicHours(draft.openingTime, draft.closingTime);
 
   async function handleSave() {
-    if (hasInvalidBreak) return;
+    if (hasInvalidBreak || hoursError) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -151,6 +152,9 @@ export function AppointmentsSettingsPanel() {
           </select>
         </Field>
       </div>
+      {hoursError && (
+        <p className="mt-1.5 text-[12px] text-[var(--color-amber-text)]">{hoursError}</p>
+      )}
 
       <div className="mt-5">
         <div className="text-[12px] font-semibold text-[var(--color-muted)]">Break hours</div>
@@ -234,7 +238,7 @@ export function AppointmentsSettingsPanel() {
         <Button
           variant="primary"
           onClick={() => void handleSave()}
-          disabled={hasInvalidBreak || saving}
+          disabled={hasInvalidBreak || hoursError !== null || saving}
         >
           {saving ? "Saving…" : "Save changes"}
         </Button>
