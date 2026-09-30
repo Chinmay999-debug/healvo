@@ -257,6 +257,10 @@ export interface Patient {
    * Activity feed uses this to place "new patient" entries in real
    * chronological order alongside real payments/visits (see Overview.tsx). */
   createdAt?: string;
+  /** patients.whatsapp_consent — the patient agreed to WhatsApp appointment
+   * messages (ticked on the booking page or recorded by staff). Appointment
+   * confirmations are only sent when this is true. */
+  whatsappConsent?: boolean;
 }
 
 // Phone numbers are stored in normalized "+91XXXXXXXXXX" form — see lib/phone.ts.

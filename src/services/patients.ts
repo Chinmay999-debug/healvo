@@ -8,7 +8,7 @@ import { initials } from "../lib/utils";
  * nothing downstream of useClinicData() needs to change. */
 
 const SELECT_COLUMNS =
-  "id, first_name, last_name, phone, email, age, gender, patient_type, created_at";
+  "id, first_name, last_name, phone, email, age, gender, patient_type, created_at, whatsapp_consent";
 
 type DbGender = "male" | "female" | "other";
 
@@ -22,6 +22,7 @@ interface PatientRow {
   gender: DbGender | null;
   patient_type: "new" | "returning";
   created_at: string;
+  whatsapp_consent: boolean;
 }
 
 function genderFromDb(g: DbGender | null): Patient["gender"] {
@@ -54,6 +55,7 @@ function fromRow(row: PatientRow): Patient {
     gender: genderFromDb(row.gender),
     type: row.patient_type,
     createdAt: row.created_at,
+    whatsappConsent: row.whatsapp_consent,
   };
 }
 
@@ -63,6 +65,7 @@ export interface PatientDraftInput {
   email?: string;
   age?: string;
   gender?: string;
+  whatsappConsent?: boolean;
 }
 
 export interface PatientPatchInput {
@@ -71,6 +74,7 @@ export interface PatientPatchInput {
   email?: string;
   age?: string;
   gender?: string;
+  whatsappConsent?: boolean;
 }
 
 export async function listPatients(clinicId: string): Promise<Patient[]> {
@@ -98,6 +102,8 @@ export async function createPatient(clinicId: string, draft: PatientDraftInput):
       age: draft.age ? Number(draft.age) : null,
       gender: genderToDb(draft.gender),
       patient_type: "new",
+      // The timestamp and source ('staff') are set by the database trigger.
+      whatsapp_consent: draft.whatsappConsent === true,
     })
     .select(SELECT_COLUMNS)
     .single();
@@ -116,6 +122,7 @@ export async function updatePatientRecord(patientId: string, patch: PatientPatch
   if (patch.email !== undefined) update.email = patch.email.trim() || null;
   if (patch.age !== undefined) update.age = patch.age ? Number(patch.age) : null;
   if (patch.gender !== undefined) update.gender = genderToDb(patch.gender);
+  if (patch.whatsappConsent !== undefined) update.whatsapp_consent = patch.whatsappConsent;
 
   const { data, error } = await supabase
     .from("patients")

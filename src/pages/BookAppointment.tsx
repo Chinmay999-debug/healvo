@@ -22,6 +22,7 @@ import {
   getErrorMessage,
 } from "../lib/utils";
 import { formatPhoneDisplay, isValidIndianMobile } from "../lib/phone";
+import { Checkbox } from "../components/ui/Checkbox";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-[14px] text-[var(--color-ink)] outline-none focus:border-[var(--color-teal)] focus:ring-2 focus:ring-[var(--color-teal)]/15";
@@ -62,6 +63,7 @@ export default function BookAppointment() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [whatsappConsent, setWhatsappConsent] = useState(false);
   const [booked, setBooked] = useState<{
     reason: string;
     dateLabel: string;
@@ -157,6 +159,7 @@ export default function BookAppointment() {
         name,
         phone,
         email: email || undefined,
+        whatsappConsent,
       });
       setBooked({
         reason: finalReason,
@@ -333,6 +336,9 @@ export default function BookAppointment() {
                           placeholder="Email (optional)"
                           className={inputClass}
                         />
+                        <Checkbox checked={whatsappConsent} onChange={setWhatsappConsent}>
+                          Send me appointment updates on WhatsApp
+                        </Checkbox>
                       </div>
                     </Section>
                   )}

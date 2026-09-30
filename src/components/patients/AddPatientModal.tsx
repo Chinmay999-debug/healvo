@@ -4,6 +4,7 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { PhoneInput } from "../ui/PhoneInput";
 import { inputClass } from "../ui/fieldStyles";
+import { Checkbox } from "../ui/Checkbox";
 import { useClinicData } from "../../state/clinicData";
 import { isValidIndianMobile } from "../../lib/phone";
 import { getErrorMessage } from "../../lib/utils";
@@ -14,9 +15,10 @@ interface Draft {
   phone: string;
   age: string;
   gender: string;
+  whatsappConsent: boolean;
 }
 
-const emptyDraft: Draft = { name: "", phone: "", age: "", gender: "" };
+const emptyDraft: Draft = { name: "", phone: "", age: "", gender: "", whatsappConsent: false };
 
 /**
  * Creates a patient in the clinic directory only — no visit is created.
@@ -146,6 +148,12 @@ export function AddPatientModal({
                 </select>
               </Field>
             </div>
+            <Checkbox
+              checked={draft.whatsappConsent}
+              onChange={(whatsappConsent) => setDraft((d) => ({ ...d, whatsappConsent }))}
+            >
+              Patient agreed to receive WhatsApp appointment messages
+            </Checkbox>
           </div>
 
           {error && (

@@ -65,6 +65,7 @@ export interface NewPatientDraft {
   phone: string;
   age?: string;
   gender?: string;
+  whatsappConsent?: boolean;
 }
 
 interface WalkInInput {
@@ -101,6 +102,7 @@ export interface PatientUpdateInput {
   phone?: string;
   age?: string;
   gender?: string;
+  whatsappConsent?: boolean;
 }
 
 export interface NewConsultationInput {

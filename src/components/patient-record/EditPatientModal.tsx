@@ -4,6 +4,7 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { PhoneInput } from "../ui/PhoneInput";
 import { inputClass } from "../ui/fieldStyles";
+import { Checkbox } from "../ui/Checkbox";
 import { useClinicData } from "../../state/clinicData";
 import { isValidIndianMobile } from "../../lib/phone";
 import { getErrorMessage } from "../../lib/utils";
@@ -14,6 +15,7 @@ interface Draft {
   phone: string;
   age: string;
   gender: string;
+  whatsappConsent: boolean;
 }
 
 function draftFromPatient(patient: Patient): Draft {
@@ -23,6 +25,7 @@ function draftFromPatient(patient: Patient): Draft {
     phone: digits.length > 10 ? digits.slice(-10) : digits,
     age: patient.age ? String(patient.age) : "",
     gender: patient.gender ?? "",
+    whatsappConsent: patient.whatsappConsent === true,
   };
 }
 
@@ -72,6 +75,7 @@ export function EditPatientModal({
         phone: draft.phone,
         age: draft.age,
         gender: draft.gender,
+        whatsappConsent: draft.whatsappConsent,
       });
       setSuccess(true);
     } catch (err) {
@@ -146,6 +150,12 @@ export function EditPatientModal({
                 </select>
               </Field>
             </div>
+            <Checkbox
+              checked={draft.whatsappConsent}
+              onChange={(whatsappConsent) => setDraft((d) => ({ ...d, whatsappConsent }))}
+            >
+              Patient agreed to receive WhatsApp appointment messages
+            </Checkbox>
           </div>
 
           {error && (

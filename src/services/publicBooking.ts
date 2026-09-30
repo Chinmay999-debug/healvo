@@ -82,6 +82,8 @@ export interface SubmitPublicBookingInput {
   name: string;
   phone: string;
   email?: string;
+  /** The visitor ticked "Send me appointment updates on WhatsApp". */
+  whatsappConsent?: boolean;
 }
 
 export interface PublicBookingConfirmation {
@@ -105,6 +107,7 @@ export async function submitPublicBooking(
       p_name: input.name,
       p_phone: normalizePhone(input.phone),
       p_email: input.email || null,
+      p_whatsapp_consent: input.whatsappConsent === true,
     })
     .single();
   if (error) throw error;
