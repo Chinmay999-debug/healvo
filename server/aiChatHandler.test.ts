@@ -237,3 +237,33 @@ describe("production Supabase wiring (createHealvoAiDeps)", () => {
     expect(createHealvoAiDeps({}, "user-jwt")).toBeNull();
   });
 });
+
+describe("interface guide in the system prompt", () => {
+  async function systemPrompt() {
+    const { deps } = await call("Bearer tok-premium");
+    return deps.complete.mock.calls[0][0] as string;
+  }
+
+  it("gives the model Healvo's real Add patient fields and says what isn't there", async () => {
+    const system = await systemPrompt();
+    expect(system).toContain("HEALVO INTERFACE GUIDE");
+    expect(system).toContain("Full name (required), Phone number (required");
+    expect(system).toContain("There are no date of birth, address, email, insurance");
+  });
+
+  it("forbids invented UI and claimed actions, and lists unsupported features", async () => {
+    const system = await systemPrompt();
+    expect(system).toContain("Never invent a field, button, menu, route or feature");
+    expect(system).toContain("say you're not sure");
+    expect(system).toContain("Never say that you added, saved, booked, cancelled, changed, billed or sent anything");
+    expect(system).toContain("no cancelling or rescheduling");
+    expect(system).toContain("Prescriptions cannot be printed or downloaded");
+    expect(system).toContain("staff cannot sign in to Healvo yet");
+  });
+
+  it("carries no secrets or internal identifiers", async () => {
+    const system = await systemPrompt();
+    expect(system).not.toMatch(/supabase\.co|sb_publishable|sb_secret|eyJ[A-Za-z0-9_-]{10,}|gsk_|rzp_|GROQ_API_KEY|service_role/);
+    expect(system).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+  });
+});

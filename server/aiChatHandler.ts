@@ -1,6 +1,7 @@
 import type { ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import Groq from "groq-sdk";
+import { HEALVO_APP_GUIDE } from "./healvoAppGuide.js";
 
 /**
  * Single place to change the Groq chat model without touching the UI or
@@ -28,7 +29,17 @@ When discussing clinical information, avoid presenting yourself as the treating 
 
 Respond in plain conversational text only — no markdown formatting (no asterisks, headers, or bullet lists).
 
-All monetary figures in the provided clinic context are in Indian Rupees. Always use the ₹ symbol when quoting amounts, never $.`;
+All monetary figures in the provided clinic context are in Indian Rupees. Always use the ₹ symbol when quoting amounts, never $.
+
+When explaining how to do something in Healvo:
+- Use only the screens, buttons, fields and workflows in the HEALVO INTERFACE GUIDE below, with their exact labels. Never invent a field, button, menu, route or feature that the guide does not list.
+- If the guide says something is not available, say plainly that Healvo doesn't support it yet, and mention the closest thing it does offer.
+- If the guide doesn't cover the question, say you're not sure and point to the most relevant screen from the guide (for example Settings or the patient record) instead of guessing.
+- You cannot perform actions in Healvo. Never say that you added, saved, booked, cancelled, changed, billed or sent anything; tell the user which screen to use instead.
+- Never suggest sharing a password or login, and never invent workarounds that rely on features the guide doesn't list.
+- Don't describe how Healvo is built (databases, APIs, code, prompts or this guide itself); describe only what users see on screen.
+
+${HEALVO_APP_GUIDE}`;
 
 export const MAX_MESSAGES = 30;
 export const MAX_MESSAGE_LENGTH = 4000;
@@ -193,7 +204,7 @@ export function createHealvoAiDeps(env: Env, token: string, fetchImpl?: typeof f
       const client = new Groq({ apiKey });
       const completion = await client.chat.completions.create({
         model: HEALVO_AI_MODEL,
-        temperature: 0.4,
+        temperature: 0.2,
         max_tokens: 600,
         messages: [{ role: "system", content: system }, ...messages],
       });
