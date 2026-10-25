@@ -106,6 +106,7 @@ export function SubscriptionSettingsPanel() {
   const {
     subscription,
     billing,
+    complimentary,
     isTrial,
     isActive,
     hasAccess,
@@ -194,15 +195,36 @@ export function SubscriptionSettingsPanel() {
   const recurringPrice = formatPriceINR(subscription?.base_price_paise ?? MONTHLY_FALLBACK_PAISE);
   const monthlyLocked =
     recurringMonthly && hasPaidAccess && subscription?.plan_interval === "year" && !billing?.annual_to_monthly_eligible && !autoRenewOn;
+  const complimentaryTier = complimentary
+    ? planTierName(complimentary.plan_code, complimentary.plan_name) ?? complimentary.plan_name
+    : null;
+  const complimentaryEnd = complimentary?.expires_at ? formatAccessDate(complimentary.expires_at) : null;
 
   const status: {
     tone: PlanTone;
-    label: string;
+    /** null hides the status pill. */
+    label: string | null;
     title: string;
     caption: ReactNode;
     endLabel: string;
     endValue: string;
-  } = isTrial
+  } = complimentary
+    ? {
+        tone: "active",
+        label: "Complimentary",
+        title: `${complimentaryTier} · Complimentary`,
+        caption: complimentaryEnd ? (
+          <>
+            Every {complimentaryTier} feature is included at no charge until{" "}
+            <strong className="font-semibold text-white">{complimentaryEnd}</strong>.
+          </>
+        ) : (
+          <>Every {complimentaryTier} feature is included at no charge. There's nothing to pay or renew.</>
+        ),
+        endLabel: "Access",
+        endValue: complimentaryEnd ?? "No end date",
+      }
+    : isTrial
     ? {
         tone: "trial",
         label: "Free trial",
@@ -247,7 +269,7 @@ export function SubscriptionSettingsPanel() {
         : hasPaidAccess
           ? {
               tone: endingSoon ? "attention" : "active",
-              label: autoRenewOff ? "Auto-renewal off" : endingSoon ? "Ending soon" : "Active",
+              label: autoRenewOff ? null : endingSoon ? "Ending soon" : "Active",
               title: planTitle,
               // One-time plans never renew by themselves, so the date is phrased as a deadline.
               caption: (
@@ -271,7 +293,11 @@ export function SubscriptionSettingsPanel() {
             };
 
   const facts: { label: string; value: string }[] = [];
-  if (isTrial || !hasPaidAccess) {
+  if (complimentary) {
+    facts.push({ label: "Plan", value: complimentaryTier ?? complimentary.plan_name });
+    facts.push({ label: "Billing", value: "No charge" });
+    facts.push({ label: status.endLabel, value: status.endValue });
+  } else if (isTrial || !hasPaidAccess) {
     if (accessWindow) {
       facts.push({ label: isTrial ? "Trial started" : "Started", value: formatAccessDate(accessWindow.startsAt) });
     }
@@ -294,15 +320,18 @@ export function SubscriptionSettingsPanel() {
       ? [
           { label: "AI Assistant", enabled: entitlements.aiAssistant, icon: "ai" as const },
           {
-            label: "WhatsApp confirmations",
+            label: entitlements.whatsapp || isTrial ? "WhatsApp confirmations" : "WhatsApp · Premium",
             enabled: entitlements.whatsapp,
             icon: "whatsapp" as const,
-            note: entitlements.whatsapp ? undefined : isTrial ? "Premium only" : "Not included",
+            note: entitlements.whatsapp ? undefined : isTrial ? "Premium only" : null,
           },
         ]
       : undefined;
 
-  const attention = halted
+  // A grant keeps the clinic running whatever an old subscription is doing.
+  const attention = complimentary
+    ? null
+    : halted
     ? "Automatic payments stopped. Update your payment method to start them again."
     : renewalCompleted
       ? "Your automatic renewal has ended. Turn it back on below to keep your plan."
@@ -328,7 +357,7 @@ export function SubscriptionSettingsPanel() {
         title={status.title}
         caption={status.caption}
         daysRemaining={daysRemaining}
-        percentUsed={accessWindow ? (expired ? 100 : getAccessProgress(accessWindow)) : null}
+        percentUsed={complimentary ? null : accessWindow ? (expired ? 100 : getAccessProgress(accessWindow)) : null}
         facts={facts}
         entitlements={entitlementChips}
       />
@@ -359,24 +388,27 @@ export function SubscriptionSettingsPanel() {
         </Card>
       )}
 
-      <Card className="p-5">
-        <SectionHeader title={plansHeading} subtitle={plansSubtitle} />
+      {/* Nothing to buy while a no-charge grant covers the clinic. */}
+      {!complimentary && (
+        <Card className="p-5">
+          <SectionHeader title={plansHeading} subtitle={plansSubtitle} />
 
-        <div className="mt-5">
-          <PlanPicker
-            mode={mode}
-            currentPlanCode={isActive ? subscription?.plan_code ?? null : null}
-            phase={checkout.phase}
-            pendingPlanCode={checkout.pendingPlanCode}
-            onSelect={checkout.startCheckout}
-            recurringMonthly={recurringMonthly}
-            hasPaidTime={hasPaidAccess}
-            autoRenewOn={autoRenewOn}
-            monthlyLocked={monthlyLocked}
-            trialActive={isTrial}
-          />
-        </div>
-      </Card>
+          <div className="mt-5">
+            <PlanPicker
+              mode={mode}
+              currentPlanCode={isActive ? subscription?.plan_code ?? null : null}
+              phase={checkout.phase}
+              pendingPlanCode={checkout.pendingPlanCode}
+              onSelect={checkout.startCheckout}
+              recurringMonthly={recurringMonthly}
+              hasPaidTime={hasPaidAccess}
+              autoRenewOn={autoRenewOn}
+              monthlyLocked={monthlyLocked}
+              trialActive={isTrial}
+            />
+          </div>
+        </Card>
+      )}
 
       <Card className="p-5">
         <SectionHeader

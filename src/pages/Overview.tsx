@@ -10,7 +10,7 @@ import { ActivityItem } from "../components/overview/ActivityItem";
 import { QuickActionMenu } from "../components/overview/QuickActionMenu";
 import { useClinicData } from "../state/clinicData";
 import type { ActivityEntry, Bill, Patient, Visit } from "../data/mockData";
-import { formatINR, parseTimeOnDate, relativeTimeLabel, todayISO, todayLabel } from "../lib/utils";
+import { formatINR, greetingFor, parseTimeOnDate, relativeTimeLabel, todayISO, todayLabel } from "../lib/utils";
 
 const RECENT_ACTIVITY_LIMIT = 6;
 
@@ -190,7 +190,7 @@ export default function Overview() {
     <AppShell crumb="Overview">
       <PageHeader
         dateLabel={todayLabel()}
-        title={`Good morning, ${firstName}`}
+        title={`${greetingFor(new Date().getHours())}, ${firstName}`}
         subtitle="Here's what's happening at your clinic today."
         actions={<QuickActionMenu />}
       />

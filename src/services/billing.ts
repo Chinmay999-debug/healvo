@@ -66,6 +66,11 @@ interface BillRow {
   payments: PaymentRow[];
 }
 
+function localTime24(timestamp: string): string {
+  const d = new Date(timestamp);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 function fromRow(row: BillRow): Bill {
   const items: BillItem[] = [...row.bill_items]
     .sort((a, b) => a.sort_order - b.sort_order)
@@ -81,7 +86,9 @@ function fromRow(row: BillRow): Bill {
       amount: Number(p.amount),
       method: METHOD_FROM_DB[p.method] ?? "Other",
       date: p.paid_date,
-      time: p.paid_time ? time24ToLabel(p.paid_time) : "",
+      // record_payment() never fills paid_time, so fall back to when the row
+      // was written (shown in the device's local time, like every other time).
+      time: time24ToLabel(p.paid_time ?? localTime24(p.created_at)),
     }));
   const latestPayment = payments[payments.length - 1];
 

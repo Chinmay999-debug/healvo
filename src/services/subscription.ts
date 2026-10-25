@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabaseClient";
 import type {
+  ClinicComplimentaryAccess,
   ClinicSubscription,
   SubscriptionPlan,
   PlatformInvoice,
@@ -42,6 +43,20 @@ export function hasSubscriptionAccess(
     default:
       return false;
   }
+}
+
+/**
+ * True while a no-charge plan grant is in force. The server only returns
+ * active grants; the date checks keep a long-open tab honest.
+ */
+export function hasComplimentaryAccess(
+  access: ClinicComplimentaryAccess | null,
+  asOf: Date = new Date(),
+): boolean {
+  if (!access) return false;
+  const nowMs = asOf.getTime();
+  if (new Date(access.starts_at).getTime() > nowMs) return false;
+  return access.expires_at === null || new Date(access.expires_at).getTime() > nowMs;
 }
 
 /**
@@ -237,6 +252,24 @@ export async function getClinicSubscription(
 
   const rows = (data ?? []) as ClinicSubscription[];
   return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * The clinic's active no-charge plan grant, if any (member-only on the server).
+ */
+export async function getClinicComplimentaryAccess(
+  clinicId: string,
+): Promise<ClinicComplimentaryAccess | null> {
+  const { data, error } = await supabase.rpc("get_clinic_complimentary_access", {
+    p_clinic_id: clinicId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as ClinicComplimentaryAccess[];
+  return rows[0] ?? null;
 }
 
 /**

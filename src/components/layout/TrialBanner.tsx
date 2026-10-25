@@ -26,11 +26,12 @@ const TONE: Record<Tone, { strip: string; icon: string }> = {
  * will not renew by itself within 7 days of ending.
  */
 export function TrialBanner() {
-  const { subscription, isTrial, isActive, inGrace, autoRenew, daysRemaining, endsAt } =
+  const { subscription, complimentary, isTrial, isActive, inGrace, autoRenew, daysRemaining, endsAt } =
     useSubscription();
   const { pathname } = useLocation();
 
-  if (pathname === SUBSCRIPTION_PATH) return null;
+  // A no-charge grant has nothing to renew or pay.
+  if (pathname === SUBSCRIPTION_PATH || complimentary) return null;
 
   const endingSoon = isActive && !autoRenew && daysRemaining <= 7;
   if (!inGrace && !isTrial && !endingSoon) return null;

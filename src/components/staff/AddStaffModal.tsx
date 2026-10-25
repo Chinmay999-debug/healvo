@@ -99,7 +99,7 @@ export function AddStaffModal({
       ) : (
         <div>
           <p className="text-[13px] text-[var(--color-muted)]">
-            Add a team member to your clinic. Access is granted automatically based on role.
+            Add a team member to your clinic's records. Staff sign-in isn't available yet.
           </p>
 
           <div className="mt-4 space-y-3">
@@ -131,7 +131,7 @@ export function AddStaffModal({
                 <option value="Reception">Reception</option>
               </select>
               <p className="mt-1.5 text-[11.5px] text-[var(--color-muted-soft)]">
-                Access permissions are set automatically based on role.
+                The role is saved for your records.
               </p>
             </Field>
           </div>

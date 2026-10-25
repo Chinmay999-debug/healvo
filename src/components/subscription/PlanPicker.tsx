@@ -3,12 +3,11 @@ import {
   Check,
   LoaderCircle,
   Lock,
-  MessageCircle,
   Minus,
   Sparkles,
-  type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/Button";
+import { WHATSAPP_GREEN, WhatsAppIcon } from "../ui/WhatsAppIcon";
 import { cn } from "../../lib/utils";
 import { formatPriceINR, getActiveSubscriptionPlans } from "../../services/subscription";
 import type { CheckoutPhase } from "../../state/useSubscriptionCheckout";
@@ -32,17 +31,30 @@ const DEFAULT_PRICES: Record<string, number> = {
   [PREMIUM_ANNUAL_PLAN_CODE]: 1198800,
 };
 
-/** Every row is a real Healvo feature. The last two are what Premium adds. */
-const COMPARISON: { feature: string; premiumOnly?: boolean; icon?: LucideIcon }[] = [
-  { feature: "Patient management" },
-  { feature: "Appointments" },
-  { feature: "Dental chart" },
-  { feature: "Billing & payments" },
-  { feature: "Reports" },
-  { feature: "Online booking" },
-  { feature: "AI Assistant", premiumOnly: true, icon: Sparkles },
-  { feature: "WhatsApp appointment confirmations", premiumOnly: true, icon: MessageCircle },
+/** Every line is a real Healvo feature, included in both plans. */
+const CORE_FEATURES = [
+  "Patient management",
+  "Appointments",
+  "Dental chart",
+  "Billing & payments",
+  "Reports",
+  "Online booking",
 ];
+
+/** What Premium adds on top of Core. */
+const PREMIUM_FEATURES = ["AI Assistant", "WhatsApp appointment confirmations"] as const;
+
+/** Sparkle for AI (tinted by `aiClassName`); WhatsApp always keeps its brand green. */
+function PremiumFeatureIcon({ feature, size, aiClassName }: { feature: string; size: number; aiClassName: string }) {
+  if (feature === "AI Assistant") {
+    return <Sparkles size={size} strokeWidth={2.25} className={cn("shrink-0", aiClassName)} />;
+  }
+  return (
+    <span className="inline-flex shrink-0" style={{ color: WHATSAPP_GREEN }}>
+      <WhatsAppIcon size={size} />
+    </span>
+  );
+}
 
 function tierOf(code: string | null | undefined): Tier | null {
   if (!code) return null;
@@ -147,9 +159,9 @@ export function PlanPicker({
             <Check size={14} strokeWidth={3} className="text-[var(--color-mint-text)]" />
             AI Assistant included
           </span>
-          <span className="inline-flex items-center gap-1.5 text-[var(--color-muted)]">
-            <Minus size={14} strokeWidth={3} className="text-[var(--color-muted-soft)]" />
-            WhatsApp confirmations start with Premium
+          <span className="inline-flex items-start gap-1.5 text-[var(--color-muted)]">
+            <Minus size={14} strokeWidth={3} className="mt-px shrink-0 text-[var(--color-muted-soft)]" />
+            WhatsApp appointment confirmations start with Premium
           </span>
         </div>
       )}
@@ -330,24 +342,18 @@ function CorePlanCard({ code, pricePaise, annual, isCurrent, action, isPending, 
         {isCurrent && <CurrentBadge onDark={false} />}
       </div>
       <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-muted)]">
-        Everything to run your clinic, day to day.
+        Everything a clinic needs to run day-to-day
       </p>
 
       <PriceBlock pricePaise={pricePaise} annual={annual} onDark={false} />
 
       <ul className="mt-5 space-y-2.5 border-t border-[var(--color-border)] pt-5 text-[13px]">
-        <li className="flex items-center gap-2.5 font-semibold text-[var(--color-ink)]">
-          <Check size={15} strokeWidth={2.75} className="shrink-0 text-[var(--color-teal)]" />
-          All clinic management features
-        </li>
-        <li className="flex items-center gap-2.5 text-[var(--color-muted)]">
-          <Minus size={15} strokeWidth={2.5} className="shrink-0 text-[var(--color-muted-soft)]" />
-          AI Assistant not included
-        </li>
-        <li className="flex items-center gap-2.5 text-[var(--color-muted)]">
-          <Minus size={15} strokeWidth={2.5} className="shrink-0 text-[var(--color-muted-soft)]" />
-          WhatsApp confirmations not included
-        </li>
+        {CORE_FEATURES.map((feature) => (
+          <li key={feature} className="flex items-center gap-2.5 font-semibold text-[var(--color-ink)]">
+            <Check size={15} strokeWidth={2.75} className="shrink-0 text-[var(--color-teal)]" />
+            {feature}
+          </li>
+        ))}
       </ul>
 
       <div className="flex-1" />
@@ -403,7 +409,7 @@ function PremiumPlanCard({ code, pricePaise, annual, isCurrent, action, isPendin
         )}
       </div>
       <p className="relative mt-1 text-[13px] leading-relaxed text-white/60">
-        Everything in Core, plus AI and WhatsApp.
+        Everything in Core, plus AI & WhatsApp
       </p>
 
       <div className="relative">
@@ -415,14 +421,12 @@ function PremiumPlanCard({ code, pricePaise, annual, isCurrent, action, isPendin
           <Check size={15} strokeWidth={2.75} className="shrink-0 text-[#5eead4]" />
           Everything in Core
         </li>
-        <li className="flex items-center gap-2.5 font-semibold">
-          <Sparkles size={15} strokeWidth={2.25} className="shrink-0 text-[#5eead4]" />
-          AI Assistant
-        </li>
-        <li className="flex items-center gap-2.5 font-semibold">
-          <MessageCircle size={15} strokeWidth={2.25} className="shrink-0 text-[#5eead4]" />
-          WhatsApp appointment confirmations
-        </li>
+        {PREMIUM_FEATURES.map((feature) => (
+          <li key={feature} className="flex items-center gap-2.5 font-semibold">
+            <PremiumFeatureIcon feature={feature} size={15} aiClassName="text-[#5eead4]" />
+            {feature}
+          </li>
+        ))}
       </ul>
 
       <div className="flex-1" />
@@ -458,22 +462,43 @@ function ComparisonTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
-            {COMPARISON.map(({ feature, premiumOnly, icon: Icon }) => (
-              <tr key={feature} className={premiumOnly ? "bg-[var(--color-teal)]/[0.035]" : undefined}>
+            {CORE_FEATURES.map((feature) => (
+              <tr key={feature}>
+                <th scope="row" className="px-4 py-3 font-semibold text-[var(--color-ink)]">
+                  {feature}
+                </th>
+                <td className="px-2 py-3 text-center">
+                  <IncludedMark subtle />
+                </td>
+                <td className="bg-[var(--color-teal)]/[0.08] px-2 py-3 text-center">
+                  <IncludedMark />
+                </td>
+              </tr>
+            ))}
+            <tr className="bg-[var(--color-teal)]/[0.035]">
+              <th
+                scope="rowgroup"
+                colSpan={3}
+                className="px-4 pt-3 pb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--color-teal)] uppercase"
+              >
+                Premium adds
+              </th>
+            </tr>
+            {PREMIUM_FEATURES.map((feature) => (
+              <tr key={feature} className="bg-[var(--color-teal)]/[0.035]">
                 <th scope="row" className="px-4 py-3 font-semibold text-[var(--color-ink)]">
                   <span className="flex items-center gap-2">
-                    {Icon && <Icon size={14} strokeWidth={2.25} className="shrink-0 text-[var(--color-teal)]" />}
+                    <PremiumFeatureIcon feature={feature} size={14} aiClassName="text-[var(--color-teal)]" />
                     {feature}
                   </span>
                 </th>
                 <td className="px-2 py-3 text-center">
-                  {premiumOnly ? (
-                    <span className="inline-flex text-[var(--color-muted-soft)]" aria-label="Not included">
-                      <Minus size={16} strokeWidth={2.5} />
-                    </span>
-                  ) : (
-                    <IncludedMark subtle />
-                  )}
+                  <span
+                    className="inline-flex text-[14px] font-semibold text-[var(--color-muted-soft)]"
+                    aria-label="Available with Premium"
+                  >
+                    —
+                  </span>
                 </td>
                 <td className="bg-[var(--color-teal)]/[0.08] px-2 py-3 text-center">
                   <IncludedMark />

@@ -48,6 +48,18 @@ export interface ClinicSubscription {
   created_at: string;
 }
 
+/**
+ * A no-charge plan grant (not a subscription): the clinic gets the plan's
+ * features and app access without any payment. Only active grants are returned.
+ */
+export interface ClinicComplimentaryAccess {
+  plan_code: string;
+  plan_name: string;
+  starts_at: string;
+  /** null = no end date. */
+  expires_at: string | null;
+}
+
 export type GatewaySubscriptionStatus =
   | "created"
   | "authenticated"

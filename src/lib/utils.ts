@@ -59,10 +59,15 @@ export function todayLabel() {
  * (Today.tsx, PatientRecordHeader.tsx, QuickActionMenu.tsx,
  * BookingSettingsPanel.tsx) derives it from the real active clinic's slug
  * instead of each hardcoding its own copy of the old mock path. */
-export function buildBookingUrl(slug: string) {
+/** The public booking page lives on the app's own origin (app.healvo.in in
+ * production) — healvo.in is the marketing site and has no /book route, so a
+ * hardcoded "healvo.in/book/…" link 404s for every patient it's sent to. */
+export function buildBookingUrl(slug: string, origin: string = window.location.origin) {
+  const path = `/book/${slug}`;
   return {
-    path: `/book/${slug}`,
-    displayUrl: `healvo.in/book/${slug}`,
+    path,
+    url: `${origin}${path}`,
+    displayUrl: `${origin.replace(/^https?:\/\//, "")}${path}`,
   };
 }
 
@@ -80,6 +85,13 @@ export function isoDate(date: Date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/** Dashboard greeting for a device-local hour (0–23) — same clock as todayLabel(). */
+export function greetingFor(hour: number): string {
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 }
 
 export function todayISO() {

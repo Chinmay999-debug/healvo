@@ -35,20 +35,32 @@ function SubscriptionIndicator({
   collapsed: boolean;
   onNavigate?: () => void;
 }) {
-  const { isTrial, isActive, inGrace, autoRenew, daysRemaining, activePlan } = useSubscription();
-  if (!isTrial && !isActive && !inGrace) return null;
+  const { complimentary, isTrial, isActive, inGrace, autoRenew, daysRemaining, activePlan } = useSubscription();
+  if (!complimentary && !isTrial && !isActive && !inGrace) return null;
 
-  const needsAttention = isTrial || inGrace || (!autoRenew && daysRemaining <= 7);
-  const tier = planTierName(activePlan?.code, activePlan?.name);
-  const label = isTrial ? "Free trial" : tier ? `${tier} plan` : `${planDisplayName(activePlan?.interval)} plan`;
-  const status = isTrial
-    ? `${daysRemaining}d left`
-    : inGrace
-      ? "Payment due"
-      : daysRemaining <= 7
-        ? `${daysRemaining}d left`
-        : "Active";
-  const title = `${label}${!isTrial && tier ? ` (${planDisplayName(activePlan?.interval)})` : ""} · ${isTrial ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left` : status}`;
+  const needsAttention = !complimentary && (isTrial || inGrace || (!autoRenew && daysRemaining <= 7));
+  const tier = complimentary
+    ? planTierName(complimentary.plan_code, complimentary.plan_name)
+    : planTierName(activePlan?.code, activePlan?.name);
+  const label = complimentary
+    ? `${tier ?? complimentary.plan_name} plan`
+    : isTrial
+      ? "Free trial"
+      : tier
+        ? `${tier} plan`
+        : `${planDisplayName(activePlan?.interval)} plan`;
+  const status = complimentary
+    ? "Complimentary"
+    : isTrial
+      ? `${daysRemaining}d left`
+      : inGrace
+        ? "Payment due"
+        : daysRemaining <= 7
+          ? `${daysRemaining}d left`
+          : "Active";
+  const title = complimentary
+    ? `${label} · ${status}`
+    : `${label}${!isTrial && tier ? ` (${planDisplayName(activePlan?.interval)})` : ""} · ${isTrial ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left` : status}`;
 
   return (
     <Link

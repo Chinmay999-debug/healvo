@@ -87,7 +87,7 @@ export function PatientRecordHeader({ patient }: { patient: Patient }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 pt-1">
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
           <Button variant="outline" onClick={openBookingPage}>
             <CalendarPlus size={15} strokeWidth={2.25} />
             Book appointment

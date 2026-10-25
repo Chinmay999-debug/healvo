@@ -95,10 +95,28 @@ export interface UploadDocumentInput {
  * attempt to delete the just-uploaded object so a failed upload doesn't
  * silently consume Storage quota forever; that cleanup call's own failure
  * is logged but doesn't mask the original error. */
+// Mirrors the patient-documents bucket's own allowed_mime_types and
+// file_size_limit (20 MB), which stay the real enforcement — this only
+// replaces Storage's raw "mime type text/plain is not supported" with
+// something a person can act on, before any bytes are sent.
+export const ALLOWED_DOCUMENT_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+
+export function documentFileProblem(file: Pick<File, "type" | "size">): string | null {
+  if (!ALLOWED_DOCUMENT_TYPES.includes(file.type)) {
+    return "This file type isn't supported. Upload a JPG, PNG, WEBP image or a PDF.";
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) return "This file is larger than 20 MB. Upload a smaller file.";
+  return null;
+}
+
 export async function uploadDocument(
   clinicId: string,
   input: UploadDocumentInput,
 ): Promise<PatientDocument> {
+  const problem = documentFileProblem(input.file);
+  if (problem) throw new Error(problem);
+
   const documentId = crypto.randomUUID();
   const storagePath = `${clinicId}/${input.patientId}/${documentId}/${safeFilename(input.file.name)}`;
 

@@ -1,6 +1,7 @@
-import type { CSSProperties, ReactNode } from "react";
-import { Check, MessageCircle, Minus, Sparkles, type LucideIcon } from "lucide-react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
+import { Check, Minus, Sparkles } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { WhatsAppIcon } from "../ui/WhatsAppIcon";
 
 export type PlanTone = "trial" | "active" | "attention" | "expired";
 
@@ -77,7 +78,7 @@ function DaysRing({
 export interface PlanStatusHeroProps {
   clinicName: string;
   /** Short status word shown in the pill, e.g. "Free trial", "Auto-renews". */
-  statusLabel: string;
+  statusLabel: string | null;
   tone: PlanTone;
   /** The plan line, e.g. "Monthly plan" or "15-day free trial". */
   title: string;
@@ -88,12 +89,15 @@ export interface PlanStatusHeroProps {
   percentUsed: number | null;
   facts: { label: string; value: string }[];
   /** Server-reported feature access; omitted while unknown. */
-  entitlements?: { label: string; enabled: boolean; icon: "ai" | "whatsapp"; note?: string }[];
+  entitlements?: { label: string; enabled: boolean; icon: "ai" | "whatsapp"; note?: string | null }[];
 }
 
-const ENTITLEMENT_ICONS: Record<"ai" | "whatsapp", LucideIcon> = {
+const ENTITLEMENT_ICONS: Record<
+  "ai" | "whatsapp",
+  ComponentType<{ size?: number; strokeWidth?: number; className?: string }>
+> = {
   ai: Sparkles,
-  whatsapp: MessageCircle,
+  whatsapp: WhatsAppIcon,
 };
 
 export function PlanStatusHero({
@@ -134,10 +138,12 @@ export function PlanStatusHero({
             {clinicName}
           </h2>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[12px] font-semibold text-white ring-1 ring-white/15 ring-inset">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: accent }} />
-          {statusLabel}
-        </span>
+        {statusLabel && (
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[12px] font-semibold text-white ring-1 ring-white/15 ring-inset">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: accent }} />
+            {statusLabel}
+          </span>
+        )}
       </div>
 
       <div className="relative mt-5 flex items-center justify-between gap-4 sm:mt-6 sm:gap-8">
@@ -196,17 +202,27 @@ export function PlanStatusHero({
                   enabled ? "bg-[#2dd4bf]/12 text-white ring-[#2dd4bf]/35" : "bg-white/[0.04] text-white/50 ring-white/10",
                 )}
               >
-                <Icon size={13} strokeWidth={2.25} className={enabled ? "text-[#5eead4]" : "text-white/40"} />
-                {label}
-                <span
+                <Icon
+                  size={13}
+                  strokeWidth={2.25}
                   className={cn(
-                    "inline-flex items-center gap-0.5 text-[11px] font-bold",
-                    enabled ? "text-[#5eead4]" : "text-white/40",
+                    "shrink-0",
+                    !enabled ? "text-white/40" : icon === "whatsapp" ? "text-[#25D366]" : "text-[#5eead4]",
                   )}
-                >
-                  {enabled ? <Check size={11} strokeWidth={3} /> : <Minus size={11} strokeWidth={3} />}
-                  {note ?? (enabled ? "On" : "Not included")}
-                </span>
+                />
+                {label}
+                {/* note: null means the label already says it all — no status suffix. */}
+                {note !== null && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-0.5 text-[11px] font-bold",
+                      enabled ? "text-[#5eead4]" : "text-white/40",
+                    )}
+                  >
+                    {enabled ? <Check size={11} strokeWidth={3} /> : <Minus size={11} strokeWidth={3} />}
+                    {note ?? (enabled ? "On" : "Not included")}
+                  </span>
+                )}
               </li>
             );
           })}

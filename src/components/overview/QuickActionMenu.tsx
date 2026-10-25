@@ -51,7 +51,7 @@ export function QuickActionMenu() {
 
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(bookingUrl.displayUrl);
+      await navigator.clipboard.writeText(bookingUrl.url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

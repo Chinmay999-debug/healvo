@@ -59,6 +59,20 @@ function fromRow(row: PatientRow): Patient {
   };
 }
 
+/** Postgres constraint errors surface as raw text ("duplicate key value
+ * violates unique constraint ...") — turn the ones a person can actually hit
+ * from the patient form into something they can act on. */
+export function friendlyPatientError(error: { code?: string; message?: string }): Error {
+  const message = error.message ?? "";
+  if (error.code === "23505" && message.includes("patients_clinic_phone_unique")) {
+    return new Error("A patient with this phone number already exists in your clinic. Search for them instead.");
+  }
+  if (error.code === "23514" && message.includes("patients_age_check")) {
+    return new Error("Age must be greater than 0.");
+  }
+  return Object.assign(new Error(message || "Could not save this patient."), error);
+}
+
 export interface PatientDraftInput {
   name: string;
   phone: string;
@@ -107,7 +121,7 @@ export async function createPatient(clinicId: string, draft: PatientDraftInput):
     })
     .select(SELECT_COLUMNS)
     .single();
-  if (error) throw error;
+  if (error) throw friendlyPatientError(error);
   return fromRow(data);
 }
 
@@ -130,7 +144,7 @@ export async function updatePatientRecord(patientId: string, patch: PatientPatch
     .eq("id", patientId)
     .select(SELECT_COLUMNS)
     .single();
-  if (error) throw error;
+  if (error) throw friendlyPatientError(error);
   return fromRow(data);
 }
 
