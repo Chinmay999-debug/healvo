@@ -23,6 +23,7 @@ import {
   type PasswordResetErrors,
 } from "../../lib/passwordPolicy";
 import { getErrorMessage } from "../../lib/utils";
+import { usePageIdentity } from "../../lib/usePageIdentity";
 
 /**
  * Where a salesperson's invitation email lands (admin-invite-salesperson sets
@@ -51,6 +52,7 @@ function readInviteFlag(): boolean {
 export default function SalesWelcome() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  usePageIdentity("Healvo Sales", "/favicon-sales.svg");
   const [inviteSession] = useState(readInviteFlag);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");

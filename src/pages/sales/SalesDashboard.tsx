@@ -40,6 +40,7 @@ import {
 import { referralLink, whatsAppShareUrl } from "../../lib/salesReferral";
 import { cn, getErrorMessage } from "../../lib/utils";
 import { copyText } from "../../lib/copyText";
+import { usePageIdentity } from "../../lib/usePageIdentity";
 
 /**
  * /sales/dashboard — the only screen a salesperson login has. Lives outside
@@ -49,6 +50,7 @@ import { copyText } from "../../lib/copyText";
  */
 export default function SalesDashboardPage() {
   const auth = useAuth();
+  usePageIdentity("Healvo Sales", "/favicon-sales.svg");
 
   if (auth.loading && !auth.user) return <CenteredMessage>Loading…</CenteredMessage>;
   if (!auth.user) return <SalesLogin />;
