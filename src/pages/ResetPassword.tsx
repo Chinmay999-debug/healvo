@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, LinkIcon, Loader2 } from "lucide-react";
+import { CheckCircle2, KeyRound, LinkIcon, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { PasswordField } from "../components/auth/PasswordField";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../components/auth/authLayout";
 import { useAuth } from "../state/authContext";
 import { authRedirect } from "../lib/supabaseClient";
+import { PASSWORD_RESET_PATH } from "../services/auth";
 import { isExpiredLink } from "../lib/authRedirect";
 import {
   MIN_PASSWORD_LENGTH,
@@ -33,7 +34,9 @@ import { getErrorMessage } from "../lib/utils";
  * a password. RequireAuthAndClinic sends them back here for the same reason.
  */
 export default function ResetPassword() {
-  const { passwordRecovery, completePasswordReset, signOut, loading } = useAuth();
+  const { passwordRecovery, completePasswordReset, signOut, loading, redeemRecoveryLink, user } = useAuth();
+  // Salespeople log in on their own screen, not the clinic one.
+  const loginPath = user?.app_metadata?.healvo_role === "salesperson" ? "/sales/dashboard" : "/";
   const navigate = useNavigate();
 
   const [password, setPassword] = useState("");
@@ -42,6 +45,27 @@ export default function ResetPassword() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Scanner-safe link (?token_hash=…&type=recovery): redeemed only when the
+  // person clicks Continue, so a mail scanner opening the link first cannot
+  // use it up and trap them in a "link expired" loop.
+  const pendingToken =
+    authRedirect.type === "recovery" && authRedirect.tokenHash ? authRedirect.tokenHash : null;
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemFailed, setRedeemFailed] = useState(false);
+
+  async function redeem() {
+    if (!pendingToken) return;
+    setRedeeming(true);
+    try {
+      await redeemRecoveryLink(pendingToken);
+      window.history.replaceState(null, "", PASSWORD_RESET_PATH);
+    } catch {
+      setRedeemFailed(true);
+    } finally {
+      setRedeeming(false);
+    }
+  }
 
   // AuthProvider re-asserts `loading` on every auth event, not just the first
   // resolution (a token refresh will do it). Latching means a later event
@@ -57,8 +81,9 @@ export default function ResetPassword() {
   // session exists — so this is known on the first paint.
   const linkExpired = isExpiredLink(authRedirect);
 
-  if (done) return <ResetComplete onContinue={() => void signOut().then(() => navigate("/"))} />;
-  if (linkExpired) return <ResetLinkProblem />;
+  if (done) return <ResetComplete onContinue={() => void signOut().then(() => navigate(loginPath))} />;
+  if (linkExpired || redeemFailed) return <ResetLinkProblem />;
+  if (pendingToken && !passwordRecovery) return <ConfirmResetLink busy={redeeming} onContinue={() => void redeem()} />;
   if (!settled && !passwordRecovery) return <CheckingLink />;
   if (!passwordRecovery) return <ResetLinkProblem />;
 
@@ -127,6 +152,23 @@ export default function ResetPassword() {
           {saving ? "Updating password…" : "Update password"}
         </Button>
       </form>
+    </AuthShell>
+  );
+}
+
+function ConfirmResetLink({ busy, onContinue }: { busy: boolean; onContinue: () => void }) {
+  return (
+    <AuthShell>
+      <div className="text-center">
+        <AuthStatusIcon icon={KeyRound} />
+        <h1 className="mt-4 text-[19px] font-extrabold text-[var(--color-ink)]">Reset your password</h1>
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--color-muted)]">
+          Continue to choose a new password for your Healvo account.
+        </p>
+        <Button variant="primary" className="mt-6 w-full justify-center py-2.5" onClick={onContinue} disabled={busy}>
+          {busy ? "Checking your link…" : "Continue"}
+        </Button>
+      </div>
     </AuthShell>
   );
 }

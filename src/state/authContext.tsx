@@ -18,6 +18,7 @@ import {
   signOut as signOutRequest,
   signUpWithPassword,
   updatePassword,
+  verifyEmailToken,
   verifyPassword,
 } from "../services/auth";
 import { authRedirect } from "../lib/supabaseClient";
@@ -82,6 +83,9 @@ interface AuthContextValue {
   /** Emails a reset link. Resolves identically whether or not the address has
    * an account — never branch on it, or you leak who is registered. */
   sendPasswordReset: (email: string) => Promise<void>;
+  /** Redeems a scanner-safe reset link on the person's click and enters the
+   * reset state. Throws when the link is used or expired. */
+  redeemRecoveryLink: (tokenHash: string) => Promise<void>;
   /** Saves the new password for a recovery session and ends the reset state. */
   completePasswordReset: (password: string) => Promise<void>;
   /** Signed-in change. Resolves false when the current password is wrong, so
@@ -216,6 +220,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await sendPasswordResetEmail(email);
   }, []);
 
+  const redeemRecoveryLink = useCallback(async (tokenHash: string) => {
+    // Flag first: the sign-in this causes must never be treated as a normal
+    // login that drops the person into the app with the reset unfinished.
+    writeRecoveryFlag(true);
+    setPasswordRecovery(true);
+    try {
+      await verifyEmailToken(tokenHash, "recovery");
+    } catch (err) {
+      writeRecoveryFlag(false);
+      setPasswordRecovery(false);
+      throw err;
+    }
+  }, []);
+
   const completePasswordReset = useCallback(async (password: string) => {
     await updatePassword(password);
     // Only cleared once Supabase has accepted the password. Clearing first
@@ -253,6 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       passwordRecovery,
       hasPassword: hasPasswordIdentity(session?.user ?? null),
       sendPasswordReset,
+      redeemRecoveryLink,
       completePasswordReset,
       changePassword,
     }),
@@ -269,6 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh,
       passwordRecovery,
       sendPasswordReset,
+      redeemRecoveryLink,
       completePasswordReset,
       changePassword,
     ],

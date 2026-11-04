@@ -21,6 +21,13 @@ export interface AuthRedirectParams {
   errorCode: string | null;
   /** Supabase's own wording, safe to show as a fallback. */
   errorDescription: string | null;
+  /**
+   * One-time token from a scanner-safe email link
+   * (`/reset-password?token_hash=…&type=recovery`). Unlike a
+   * `/auth/v1/verify` link it is only redeemed when the person clicks
+   * Continue, so mail security scanners that open links cannot use it up.
+   */
+  tokenHash: string | null;
 }
 
 const EMPTY: AuthRedirectParams = {
@@ -29,6 +36,7 @@ const EMPTY: AuthRedirectParams = {
   error: null,
   errorCode: null,
   errorDescription: null,
+  tokenHash: null,
 };
 
 /**
@@ -54,6 +62,7 @@ export function parseAuthRedirect(href: string): AuthRedirectParams {
     error: read("error"),
     errorCode: read("error_code"),
     errorDescription: read("error_description")?.replace(/\+/g, " ") ?? null,
+    tokenHash: read("token_hash"),
   };
 }
 

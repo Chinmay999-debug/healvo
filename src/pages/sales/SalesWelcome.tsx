@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Loader2, MailWarning } from "lucide-react";
+import { Loader2, MailCheck, MailWarning } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { PasswordField } from "../../components/auth/PasswordField";
 import {
@@ -14,7 +14,7 @@ import {
 import { useAuth } from "../../state/authContext";
 import { authRedirect } from "../../lib/supabaseClient";
 import { isExpiredLink } from "../../lib/authRedirect";
-import { updatePassword } from "../../services/auth";
+import { updatePassword, verifyEmailToken } from "../../services/auth";
 import {
   MIN_PASSWORD_LENGTH,
   PASSWORD_RULE_TEXT,
@@ -30,6 +30,10 @@ import { usePageIdentity } from "../../lib/usePageIdentity";
  * redirectTo here). Supabase hands over a one-time session for the invited
  * account; the salesperson chooses their own password, then goes to their
  * dashboard. Healvo never creates or shares a password.
+ *
+ * Scanner-safe invite links (?token_hash=…&type=invite) are only redeemed when
+ * the person clicks "Accept invitation", so a mail scanner that opens links
+ * cannot use the one-time token up first.
  */
 const INVITE_FLAG = "healvo.sales-invite";
 
@@ -53,7 +57,30 @@ export default function SalesWelcome() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   usePageIdentity("Healvo Sales", "/favicon-sales.svg");
-  const [inviteSession] = useState(readInviteFlag);
+  const [inviteSession, setInviteSession] = useState(readInviteFlag);
+  const pendingToken =
+    authRedirect.type === "invite" && authRedirect.tokenHash ? authRedirect.tokenHash : null;
+  const [accepting, setAccepting] = useState(false);
+  const [acceptFailed, setAcceptFailed] = useState(false);
+
+  async function accept() {
+    if (!pendingToken) return;
+    setAccepting(true);
+    try {
+      await verifyEmailToken(pendingToken, "invite");
+      try {
+        sessionStorage.setItem(INVITE_FLAG, "1");
+      } catch {
+        // ignore
+      }
+      setInviteSession(true);
+      window.history.replaceState(null, "", "/sales/welcome");
+    } catch {
+      setAcceptFailed(true);
+    } finally {
+      setAccepting(false);
+    }
+  }
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [fieldErrors, setFieldErrors] = useState<PasswordResetErrors>({});
@@ -65,14 +92,31 @@ export default function SalesWelcome() {
     if (!loading) setSettled(true);
   }, [loading]);
 
-  if (isExpiredLink(authRedirect)) {
+  if (pendingToken && !inviteSession && !acceptFailed) {
+    return (
+      <AuthShell>
+        <div className="text-center">
+          <AuthStatusIcon icon={MailCheck} />
+          <h1 className="mt-4 text-[19px] font-extrabold text-[var(--color-ink)]">Join the Healvo sales team</h1>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--color-muted)]">
+            Accept your invitation, then choose a password for your sales dashboard.
+          </p>
+          <Button className="mt-6 w-full justify-center py-2.5" onClick={() => void accept()} disabled={accepting}>
+            {accepting ? "Checking your invitation…" : "Accept invitation"}
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (isExpiredLink(authRedirect) || acceptFailed) {
     return (
       <AuthShell>
         <div className="text-center">
           <AuthStatusIcon icon={MailWarning} tone="amber" />
           <h1 className="mt-4 text-[19px] font-extrabold text-[var(--color-ink)]">This invitation link has expired</h1>
           <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--color-muted)]">
-            Invitation links work once and expire after a day. Ask your Healvo admin to resend the invitation.
+            Invitation links work once and expire after a day. Ask your Healvo admin to resend it, or to set a password for you.
           </p>
           <Button variant="outline" className="mt-6 w-full justify-center py-2.5" onClick={() => navigate("/sales/dashboard")}>
             I already set my password — log in

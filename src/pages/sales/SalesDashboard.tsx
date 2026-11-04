@@ -5,6 +5,7 @@ import {
   Building2,
   Check,
   Copy,
+  KeyRound,
   LogOut,
   MousePointerClick,
   RefreshCw,
@@ -20,6 +21,7 @@ import { Card } from "../../components/ui/Card";
 import { WhatsAppIcon, WHATSAPP_GREEN } from "../../components/ui/WhatsAppIcon";
 import { ThemeToggle } from "../../components/layout/ThemeToggle";
 import { PasswordField } from "../../components/auth/PasswordField";
+import { ChangePasswordModal } from "../../components/settings/ChangePasswordModal";
 import {
   AuthHeading,
   AuthShell,
@@ -63,6 +65,7 @@ function SalesHome() {
   const [error, setError] = useState<string | null>(null);
   const [notSales, setNotSales] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -115,6 +118,15 @@ function SalesHome() {
             <ThemeToggle />
             <button
               type="button"
+              onClick={() => setChangingPassword(true)}
+              aria-label="Change password"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold text-[var(--color-muted)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]"
+            >
+              <KeyRound size={15} />
+              <span className="hidden sm:inline">Change password</span>
+            </button>
+            <button
+              type="button"
               onClick={() => void signOut()}
               className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold text-[var(--color-muted)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]"
             >
@@ -160,6 +172,7 @@ function SalesHome() {
           </>
         )}
       </main>
+      <ChangePasswordModal open={changingPassword} onClose={() => setChangingPassword(false)} />
     </div>
   );
 }

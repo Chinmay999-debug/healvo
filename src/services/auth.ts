@@ -60,6 +60,15 @@ export async function signInWithGoogle(): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Redeems a one-time email token (scanner-safe links, see lib/authRedirect).
+ * Signs the person in on success; throws when the token is used or expired.
+ */
+export async function verifyEmailToken(tokenHash: string, type: "recovery" | "invite"): Promise<void> {
+  const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+  if (error) throw error;
+}
+
 export async function signOut(): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
