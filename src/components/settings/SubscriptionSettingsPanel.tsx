@@ -184,7 +184,7 @@ export function SubscriptionSettingsPanel() {
   const planName = planDisplayName(subscription?.plan_interval);
   const tierName = planTierName(subscription?.plan_code, subscription?.plan_name);
   const planTitle = tierName ? `${tierName} · ${planName}` : `${planName} plan`;
-  const trialLength = getWindowLengthDays(accessWindow) ?? subscription?.trial_days ?? 15;
+  const trialLength = getWindowLengthDays(accessWindow) ?? subscription?.trial_days ?? 30;
   const isAnnualPlan = subscription?.plan_interval === "year";
   const priceLabel = subscription
     ? isAnnualPlan

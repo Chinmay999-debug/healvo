@@ -60,7 +60,7 @@ export function hasComplimentaryAccess(
 }
 
 /**
- * Returns true if the clinic is currently within its 15-day free trial.
+ * Returns true if the clinic is currently within its free trial (30 days for new clinics).
  */
 export function isTrialing(
   subscription: ClinicSubscription | null,
@@ -208,7 +208,7 @@ export function planTierName(
   return tier || null;
 }
 
-/** Length of an access window in whole days (e.g. a 15-day trial or a 30-day pilot). */
+/** Length of an access window in whole days (e.g. a 30-day trial or pilot). */
 export function getWindowLengthDays(window: { startsAt: Date; endsAt: Date } | null): number | null {
   if (!window) return null;
   const days = Math.round((window.endsAt.getTime() - window.startsAt.getTime()) / (1000 * 60 * 60 * 24));
