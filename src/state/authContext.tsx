@@ -59,7 +59,11 @@ interface AuthContextValue {
   /** Returns needsEmailConfirmation: true when the project requires clicking
    * an emailed link before a session exists yet — callers should show a
    * "check your inbox" state rather than assuming sign-up = signed-in. */
-  signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
+  signUp: (
+    email: string,
+    password: string,
+    metadata?: Record<string, string>,
+  ) => Promise<{ needsEmailConfirmation: boolean }>;
   /** Redirects the browser to Google and back — never resolves with a
    * session itself. The returning redirect is picked up by
    * onAuthStateChange like any other sign-in (see services/auth.ts). */
@@ -189,8 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // session restored on page load behave identically.
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
-    const { session: newSession } = await signUpWithPassword(email, password);
+  const signUp = useCallback(async (email: string, password: string, metadata?: Record<string, string>) => {
+    const { session: newSession } = await signUpWithPassword(email, password, metadata);
     // Same rationale as signIn — when a session comes back immediately,
     // onAuthStateChange fires and loadIdentity runs from that one path.
     return { needsEmailConfirmation: !newSession };

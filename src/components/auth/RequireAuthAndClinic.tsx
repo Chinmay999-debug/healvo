@@ -9,6 +9,12 @@ import { useAuth } from "../../state/authContext";
 import { useSubscription } from "../../state/subscriptionContext";
 import { PASSWORD_RESET_PATH } from "../../services/auth";
 import { supabase } from "../../lib/supabaseClient";
+import { claimStoredReferral } from "../../lib/salesReferral";
+
+/** Set by admin-invite-salesperson (app_metadata is not user-editable). */
+function hasSalespersonClaim(user: { app_metadata?: Record<string, unknown> } | null): boolean {
+  return user?.app_metadata?.healvo_role === "salesperson";
+}
 
 function ClinicActivityTracker({ clinicId }: { clinicId: string }) {
   useEffect(() => {
@@ -42,6 +48,31 @@ export function RequireAuthAndClinic({ children }: { children: ReactNode }) {
 
   const [onboarding, setOnboarding] = useState(false);
   const [pendingName, setPendingName] = useState("");
+  // For a signed-in user with no clinic: is this a sales-team login? Asked
+  // of the server so a salesperson never lands in the clinic onboarding
+  // wizard (create_clinic_with_owner refuses them anyway).
+  const [salesCheck, setSalesCheck] = useState<{ userId: string; isSalesperson: boolean } | null>(null);
+
+  const userId = auth.user?.id ?? null;
+  const needsSalesCheck = !auth.loading && !!userId && !auth.activeClinic && !auth.passwordRecovery;
+
+  useEffect(() => {
+    if (!needsSalesCheck || !userId) return;
+    let active = true;
+    supabase
+      .rpc("sales_whoami")
+      .then(({ data, error }) => {
+        if (!active) return;
+        const isSalesperson = !error && Boolean((data as { is_salesperson?: boolean } | null)?.is_salesperson);
+        setSalesCheck({ userId, isSalesperson });
+        // A doctor who arrived through a referral link but signed up in a
+        // way that could not carry it (Google): attribute them now.
+        if (!isSalesperson) void claimStoredReferral(userId);
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsSalesCheck, userId]);
 
   // Reset so a later sign-in (possibly a different account) always
   // re-evaluates from scratch instead of reusing a stale wizard session.
@@ -70,6 +101,13 @@ export function RequireAuthAndClinic({ children }: { children: ReactNode }) {
   if (auth.passwordRecovery) return <Navigate to={PASSWORD_RESET_PATH} replace />;
 
   if (!auth.user) return <AuthScreen onAccountCreated={setPendingName} />;
+
+  if (hasSalespersonClaim(auth.user)) return <Navigate to="/sales/dashboard" replace />;
+
+  if (!auth.activeClinic && (!salesCheck || salesCheck.userId !== auth.user.id)) {
+    return <LoadingScreen message="Loading your account…" />;
+  }
+  if (!auth.activeClinic && salesCheck?.isSalesperson) return <Navigate to="/sales/dashboard" replace />;
 
   if (onboarding || !auth.activeClinic) {
     return <OnboardingWizard initialName={pendingName} onFinish={() => setOnboarding(false)} />;

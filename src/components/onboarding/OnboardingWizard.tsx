@@ -18,6 +18,7 @@ import {
 import { normalizePhone } from "../../lib/phone";
 import { cn, getErrorMessage } from "../../lib/utils";
 import { getAttribution } from "../../lib/attribution";
+import { clearStoredReferral, referralOnboardingAttribution } from "../../lib/salesReferral";
 import { StepAboutYou } from "./StepAboutYou";
 import { StepClinic } from "./StepClinic";
 import { StepFeatureIntro } from "./StepFeatureIntro";
@@ -68,6 +69,14 @@ function slugify(value: string) {
  * draft state itself so Back/Continue never loses anything the user typed,
  * and only calls the real create_clinic_with_owner RPC once, at the end of
  * step 2 — steps 3/4 are local-only so there's nothing left to fail. */
+/** Adds the sales referral (if any) to the existing first-touch payload.
+ * Leaves the payload exactly as before (including null) when there is none. */
+function withSalesReferral<T extends object>(attribution: T | null): (T & Record<string, string>) | T | null {
+  const sales = referralOnboardingAttribution();
+  if (Object.keys(sales).length === 0) return attribution;
+  return { ...(attribution ?? ({} as T)), ...sales };
+}
+
 export function OnboardingWizard({
   initialName,
   onFinish,
@@ -184,8 +193,10 @@ export function OnboardingWizard({
         // mobile was never collected at all.
         phone: normalizePhone(aboutYou.mobile),
         title: aboutYou.title.trim() || DEFAULT_TITLE,
-        attribution: getAttribution(),
+        attribution: withSalesReferral(getAttribution()),
       });
+      // The server now holds the attribution permanently.
+      clearStoredReferral();
       // clinicSettings (address/city/phone) stays local/mock-backed this
       // phase — see state/clinicData.tsx's file header. ClinicDataProvider
       // isn't mounted yet at this point (it only wraps the real app, not

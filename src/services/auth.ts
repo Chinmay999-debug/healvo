@@ -32,8 +32,16 @@ export async function signInWithPassword(email: string, password: string): Promi
 export async function signUpWithPassword(
   email: string,
   password: string,
+  metadata?: Record<string, string>,
 ): Promise<{ session: Session | null; user: User | null }> {
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  // `metadata` lands in auth.users.raw_user_meta_data: full_name feeds the
+  // profiles trigger, healvo_ref_* feeds the sales-referral trigger (which
+  // re-validates the code server-side).
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: metadata && Object.keys(metadata).length > 0 ? { data: metadata } : undefined,
+  });
   if (error) throw error;
   return { session: data.session, user: data.user };
 }

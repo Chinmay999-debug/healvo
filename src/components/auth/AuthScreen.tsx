@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from "react";
-import { CheckCircle2, Mail } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { BadgeCheck, CheckCircle2, Mail } from "lucide-react";
 import { Button } from "../ui/Button";
 import { PasswordField } from "./PasswordField";
 import { GoogleButton } from "./GoogleButton";
@@ -15,6 +15,19 @@ import {
 import { useAuth } from "../../state/authContext";
 import { getErrorMessage } from "../../lib/utils";
 import { MIN_PASSWORD_LENGTH } from "../../lib/passwordPolicy";
+import {
+  captureSalesReferral,
+  getStoredReferral,
+  markReferralSignupStarted,
+  referralSignupMetadata,
+} from "../../lib/salesReferral";
+
+/** A referral link (/signup?ref=CODE) or a plain /signup opens on Create account. */
+function initialMode(): Mode {
+  if (typeof window === "undefined") return "login";
+  const params = new URLSearchParams(window.location.search);
+  return window.location.pathname === "/signup" || params.has("ref") ? "signup" : "login";
+}
 
 type Mode = "login" | "signup" | "forgot";
 
@@ -29,7 +42,7 @@ export function AuthScreen({
    * the onboarding wizard's "About you" step prefill it. */
   onAccountCreated?: (name: string) => void;
 }) {
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>(initialMode);
 
   return (
     <AuthShell>
@@ -150,16 +163,31 @@ function SignUpForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [referralCode, setReferralCode] = useState<string | null>(() => getStoredReferral()?.code ?? null);
+
+  useEffect(() => {
+    let active = true;
+    void captureSalesReferral().then((ref) => {
+      if (active) setReferralCode(ref?.code ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      // The account's display name is captured again (and can be refined)
-      // in the "About you" onboarding step right after this — see
-      // OnboardingWizard. Supabase Auth itself has no free-text name field.
-      const { needsEmailConfirmation } = await signUp(email.trim(), password);
+      void markReferralSignupStarted();
+      // The display name goes into Auth user metadata so the profile starts
+      // with it; it is captured again (and can be refined) in the "About
+      // you" onboarding step. healvo_ref_* is re-validated server-side.
+      const metadata: Record<string, string> = { ...referralSignupMetadata() };
+      if (name.trim()) metadata.full_name = name.trim();
+      const { needsEmailConfirmation } = await signUp(email.trim(), password, metadata);
       if (needsEmailConfirmation) {
         setNeedsConfirmation(true);
       } else {
@@ -191,6 +219,15 @@ function SignUpForm({
   return (
     <>
       <AuthHeading title="Create your account" subtitle="Set up Healvo for your clinic in a few minutes." />
+
+      {referralCode && (
+        <div className="-mt-2 mb-5 flex items-center gap-2 rounded-lg bg-[var(--color-mint-bg)] px-3 py-2 text-[12.5px] font-semibold text-[var(--color-mint-text)]">
+          <BadgeCheck size={15} strokeWidth={2.25} />
+          <span>
+            Referral code <span className="tracking-wide">{referralCode}</span> applied
+          </span>
+        </div>
+      )}
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block">

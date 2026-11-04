@@ -27,6 +27,9 @@ import { PASSWORD_RESET_PATH } from "./services/auth";
 import { trackPageView } from "./lib/metaPixel";
 
 import { captureAttribution } from "./lib/attribution";
+import { captureSalesReferral } from "./lib/salesReferral";
+import SalesDashboardPage from "./pages/sales/SalesDashboard";
+import SalesWelcome from "./pages/sales/SalesWelcome";
 
 /**
  * Sends PageView on route changes, for the routes metaPixel.ts allows. Sitting
@@ -40,6 +43,10 @@ function MetaPixelPageViews() {
     trackPageView(pathname);
     captureAttribution();
   }, [pathname]);
+  // ?ref=CODE on any landing records the referral visit server-side once.
+  useEffect(() => {
+    void captureSalesReferral();
+  }, []);
   return null;
 }
 
@@ -63,6 +70,11 @@ export default function App() {
             user into the app or the onboarding wizard before they had
             chosen a password. */}
         <Route path={PASSWORD_RESET_PATH} element={<ResetPassword />} />
+        {/* Sales team: separate from the clinic app entirely. A salesperson
+            login has no clinic and RequireAuthAndClinic sends it here. */}
+        <Route path="/sales" element={<Navigate to="/sales/dashboard" replace />} />
+        <Route path="/sales/dashboard" element={<SalesDashboardPage />} />
+        <Route path="/sales/welcome" element={<SalesWelcome />} />
         <Route
           path="/*"
           element={
