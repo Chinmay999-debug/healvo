@@ -36,12 +36,18 @@ async function invokeBilling<T>(fn: string, body: Record<string, unknown>, fallb
 export interface RecurringCheckout {
   razorpay_subscription_id: string;
   razorpay_key_id: string;
+  /** What each charge will be, from the server's quote. */
+  amount?: number;
 }
 
-export function createRecurringSubscription(clinicId: string, planCode: string): Promise<RecurringCheckout> {
+export function createRecurringSubscription(
+  clinicId: string,
+  planCode: string,
+  couponCode: string | null = null,
+): Promise<RecurringCheckout> {
   return invokeBilling<RecurringCheckout>(
     "create-razorpay-subscription",
-    { clinicId, planCode },
+    { clinicId, planCode, couponCode },
     "Couldn't start checkout. Please try again.",
   );
 }

@@ -1,8 +1,8 @@
 import { supabase } from "../lib/supabaseClient";
 import type {
+  CheckoutQuotes,
   ClinicComplimentaryAccess,
   ClinicSubscription,
-  SubscriptionPlan,
   PlatformInvoice,
 } from "../types/subscription";
 
@@ -154,6 +154,16 @@ export function formatPriceINR(paise: number): string {
   }).format(rupees);
 }
 
+/** Exact rupees for receipts: ₹499, or ₹89.82 when there are paise. */
+export function formatExactINR(paise: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: paise % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(paise / 100);
+}
+
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
@@ -273,20 +283,23 @@ export async function getClinicComplimentaryAccess(
 }
 
 /**
- * Fetches the active catalog of subscription plans available for purchase.
+ * The server's prices for this clinic, every plan at once, with a launch code
+ * if one is being tried. A preview: nothing is reserved or redeemed.
  */
-export async function getActiveSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-  const { data, error } = await supabase
-    .from("subscription_plans")
-    .select("id, code, name, interval, base_price_paise, currency, trial_days, entitlement_months, is_active")
-    .eq("is_active", true)
-    .order("base_price_paise", { ascending: true });
+export async function getCheckoutQuotes(
+  clinicId: string,
+  couponCode: string | null = null,
+): Promise<CheckoutQuotes> {
+  const { data, error } = await supabase.rpc("get_checkout_quotes", {
+    p_clinic_id: clinicId,
+    p_coupon_code: couponCode,
+  });
 
   if (error) {
     throw error;
   }
 
-  return (data ?? []) as unknown as SubscriptionPlan[];
+  return data as CheckoutQuotes;
 }
 
 /**
@@ -392,6 +405,9 @@ export interface ConfirmPaymentResult {
   current_period_ends_at: string;
   entitlement_starts_at?: string | null;
   entitlement_ends_at?: string | null;
+  bonus_months?: number | null;
+  /** Annual only: whether this payment got the Founding Clinic bonus. */
+  offer_status?: "claimed" | "sold_out" | "already_claimed" | null;
   invoice_id: string;
   invoice_number: string;
 }
@@ -415,12 +431,27 @@ export function loadRazorpayScript(): Promise<boolean> {
 }
 
 /**
+ * The user-facing message from an Edge Function that answered with an error,
+ * or null when it gave none (unreachable, or a gateway failure). An answer is
+ * final: the fallback route can't improve on it, and in production it has no
+ * Razorpay secret, so trying it would replace the real reason with its own error.
+ */
+export async function edgeFunctionRejection(error: unknown): Promise<string | null> {
+  const context = (error as { context?: unknown } | null)?.context;
+  if (!(context instanceof Response)) return null;
+  const payload = (await context.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof payload?.error === "string" && payload.error ? payload.error : null;
+}
+
+/**
  * Initiates a server-side checkout session for the chosen plan.
- * Calls Supabase Edge Function with fallback to Vercel API.
+ * Calls the Supabase Edge Function; the Vercel API route is used only if the
+ * function can't be reached.
  */
 export async function createSubscriptionCheckout(
   clinicId: string,
   planCode: string,
+  couponCode: string | null = null,
 ): Promise<CheckoutData> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -430,17 +461,20 @@ export async function createSubscriptionCheckout(
   }
 
   // 1. Try Supabase Edge Function
+  let rejection: string | null = null;
   try {
     const { data, error } = await supabase.functions.invoke("create-razorpay-checkout", {
-      body: { clinicId, planCode },
+      body: { clinicId, planCode, couponCode },
     });
 
     if (!error && data && data.orderId) {
       return data as CheckoutData;
     }
+    rejection = await edgeFunctionRejection(error);
   } catch {
     // Edge function not reachable directly, fallback to /api endpoint
   }
+  if (rejection) throw new Error(rejection);
 
   // 2. Fallback to API route (Vercel / Vite dev middleware)
   const res = await fetch("/api/subscription/checkout", {
@@ -449,7 +483,7 @@ export async function createSubscriptionCheckout(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ clinicId, planCode }),
+    body: JSON.stringify({ clinicId, planCode, couponCode }),
   });
 
   if (!res.ok) {
@@ -479,6 +513,7 @@ export async function verifySubscriptionPayment(params: {
   }
 
   // 1. Try Supabase Edge Function
+  let rejection: string | null = null;
   try {
     const { data, error } = await supabase.functions.invoke("verify-razorpay-payment", {
       body: params,
@@ -487,9 +522,11 @@ export async function verifySubscriptionPayment(params: {
     if (!error && data && data.success) {
       return data as ConfirmPaymentResult;
     }
+    rejection = await edgeFunctionRejection(error);
   } catch {
     // Fallback to API route
   }
+  if (rejection) throw new Error(rejection);
 
   // 2. Fallback to API route
   const res = await fetch("/api/subscription/verify", {

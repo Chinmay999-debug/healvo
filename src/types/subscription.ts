@@ -19,13 +19,65 @@ export interface SubscriptionPlan {
   code: string;
   name: string;
   interval: SubscriptionInterval;
+  /** Launch price, before GST. */
   base_price_paise: number;
+  /** Standard price, before GST. What a clinic without launch pricing pays. */
+  reference_price_paise: number | null;
   currency: string;
   trial_days: number;
+  /** Paid months; any bonus months are decided per payment. */
   entitlement_months: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export type CouponStatus =
+  | "none"
+  | "applied"
+  | "invalid"
+  | "expired"
+  | "already_used"
+  | "ineligible"
+  | "not_needed";
+
+/** The server's price for one plan and this clinic. The UI only displays it. */
+export interface CheckoutQuote {
+  plan_code: string;
+  plan_name: string;
+  interval: SubscriptionInterval;
+  billing_mode: "one_time" | "recurring";
+  currency: string;
+  reference_paise: number;
+  launch_paise: number;
+  discount_paise: number;
+  taxable_paise: number;
+  gst_rate_bps: number;
+  gst_paise: number;
+  payable_paise: number;
+  price_basis: "coupon" | "locked" | "list";
+  price_tier: "launch" | "list";
+  paid_months: number;
+  bonus_months: number;
+  access_months: number;
+  coupon_code: string | null;
+  coupon_status: CouponStatus;
+  coupon_message: string | null;
+}
+
+export interface FoundingOffer {
+  slot_limit: number;
+  bonus_months: number;
+  claimed: number;
+  remaining: number;
+  available: boolean;
+}
+
+export interface CheckoutQuotes {
+  quotes: CheckoutQuote[];
+  offer: FoundingOffer;
+  /** What this clinic currently pays per purchase, if it has paid. */
+  current_amount_paise: number | null;
 }
 
 export interface ClinicSubscription {

@@ -22,6 +22,7 @@ import {
   formatPriceINR,
   getAccessProgress,
   getAccessWindow,
+  getCheckoutQuotes,
   getClinicEntitlements,
   getClinicPlatformInvoices,
   getWindowLengthDays,
@@ -122,6 +123,8 @@ export function SubscriptionSettingsPanel() {
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [invoicesError, setInvoicesError] = useState(false);
   const [entitlements, setEntitlements] = useState<ClinicEntitlements | null>(null);
+  // What this clinic really pays. The plan's base price is only the launch price.
+  const [currentAmountPaise, setCurrentAmountPaise] = useState<number | null>(null);
 
   const loadInvoices = useCallback(async () => {
     if (!clinicId) return;
@@ -163,6 +166,19 @@ export function SubscriptionSettingsPanel() {
   }, [clinicId, subscription]);
 
   useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    getCheckoutQuotes(clinicId)
+      .then((result) => {
+        if (!cancelled) setCurrentAmountPaise(result.current_amount_paise);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, subscription]);
+
+  useEffect(() => {
     if (checkout.outcome?.kind === "success") void loadInvoices();
   }, [checkout.outcome, loadInvoices]);
 
@@ -186,13 +202,10 @@ export function SubscriptionSettingsPanel() {
   const planTitle = tierName ? `${tierName} · ${planName}` : `${planName} plan`;
   const trialLength = getWindowLengthDays(accessWindow) ?? subscription?.trial_days ?? 30;
   const isAnnualPlan = subscription?.plan_interval === "year";
-  const priceLabel = subscription
-    ? isAnnualPlan
-      ? `${formatPriceINR(subscription.base_price_paise)} / ${subscription.entitlement_months || 14} months`
-      : `${formatPriceINR(subscription.base_price_paise)} / month`
-    : null;
+  const currentPrice = formatPriceINR(currentAmountPaise ?? subscription?.base_price_paise ?? MONTHLY_FALLBACK_PAISE);
+  const priceLabel = subscription ? `${currentPrice} / ${isAnnualPlan ? "year" : "month"}` : null;
   const methodName = paymentMethodName(billing?.payment_method ?? null);
-  const recurringPrice = formatPriceINR(subscription?.base_price_paise ?? MONTHLY_FALLBACK_PAISE);
+  const recurringPrice = currentPrice;
   const monthlyLocked =
     recurringMonthly && hasPaidAccess && subscription?.plan_interval === "year" && !billing?.annual_to_monthly_eligible && !autoRenewOn;
   const complimentaryTier = complimentary
@@ -228,12 +241,13 @@ export function SubscriptionSettingsPanel() {
     ? {
         tone: "trial",
         label: "Free trial",
-        title: `${trialLength}-day free trial`,
+        title: `${trialLength}-Day Free Trial`,
         caption: (
           <>
             Clinic management and the AI Assistant are unlocked. WhatsApp appointment confirmations come
-            with Premium. Your trial ends on <strong className="font-semibold text-white">{endDate}</strong>;
-            choose a plan before then to keep going without a break.
+            with Premium. Nothing is due now. Your trial ends on{" "}
+            <strong className="font-semibold text-white">{endDate}</strong>; choose a plan by then to keep going
+            without a break.
           </>
         ),
         endLabel: "Trial ends",
@@ -341,9 +355,9 @@ export function SubscriptionSettingsPanel() {
 
   const plansHeading = autoRenewOn ? "Change plan" : mode === "renew" ? "Renew or change plan" : "Choose a plan";
   const plansSubtitle = autoRenewOn
-    ? "Switching to annual turns off monthly auto-renewal at the end of your current month."
+    ? "A new plan starts when your current month ends. Switching to annual turns off monthly auto-renewal."
     : isTrial
-      ? "Your free trial runs until " + endDate + ". Your paid plan starts as soon as payment goes through."
+      ? `Nothing is due until you choose a plan. Your free trial runs until ${endDate}. Paying sooner starts your paid plan that day, and any trial days left end.`
       : hasPaidAccess
         ? `Anything you add starts after ${endDate}, so you don't lose any days.`
         : "Choose a plan to restore your clinic's access.";
@@ -394,7 +408,9 @@ export function SubscriptionSettingsPanel() {
           <SectionHeader title={plansHeading} subtitle={plansSubtitle} />
 
           <div className="mt-5">
+            {/* A completed purchase changes the end date, which resets the code and prices. */}
             <PlanPicker
+              key={subscription?.current_period_ends_at ?? "none"}
               mode={mode}
               currentPlanCode={isActive ? subscription?.plan_code ?? null : null}
               phase={checkout.phase}
@@ -402,6 +418,7 @@ export function SubscriptionSettingsPanel() {
               onSelect={checkout.startCheckout}
               recurringMonthly={recurringMonthly}
               hasPaidTime={hasPaidAccess}
+              paidThrough={hasPaidAccess ? endDate : null}
               autoRenewOn={autoRenewOn}
               monthlyLocked={monthlyLocked}
               trialActive={isTrial}

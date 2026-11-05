@@ -188,7 +188,7 @@ function ReferralLinkCard({ code, active }: { code: string | null; active: boole
   }
 
   const message = link
-    ? `Hello Doctor, I'd like you to try Healvo, the clinic management app for dentists (patients, appointments, billing and dental charts in one place). Start your free 1-month trial here: ${link}`
+    ? `Hello Doctor, I'd like you to try Healvo, the clinic management app for dentists (patients, appointments, billing and dental charts in one place). Start your 30-Day Free Trial here: ${link}`
     : "";
 
   return (
@@ -247,7 +247,7 @@ function MetricsGrid({ data }: { data: SalesDashboard }) {
     { label: "Link visits", value: String(m.clicks), hint: `${m.unique_visitors} unique visitors`, icon: MousePointerClick },
     { label: "Doctors registered", value: String(m.registrations), hint: `${m.email_verified} verified email`, icon: UserPlus },
     { label: "Clinics set up", value: String(m.clinics_onboarded), hint: "Finished clinic onboarding", icon: Building2 },
-    { label: "Active free trials", value: String(m.active_trials), hint: "1-month trial running now", icon: Sparkles },
+    { label: "Active free trials", value: String(m.active_trials), hint: "30-Day Free Trial running now", icon: Sparkles },
     { label: "Paid clinics", value: String(m.paid_clinics), hint: "Currently on a paid plan", icon: BadgeIndianRupee },
     {
       label: "Conversion rate",

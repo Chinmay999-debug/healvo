@@ -25,7 +25,7 @@ import { trackPurchase } from "../lib/metaPixel";
 export type CheckoutPhase = "idle" | "starting" | "paying" | "confirming" | "cancelling";
 
 export type CheckoutOutcome =
-  | { kind: "success"; invoiceNumber: string | null; accessEndsAt: string | null }
+  | { kind: "success"; invoiceNumber: string | null; accessEndsAt: string | null; offerMissed?: boolean }
   | { kind: "autorenew_on"; firstChargeAt: string | null }
   | { kind: "autorenew_off"; accessUntil: string | null }
   | { kind: "pending"; paymentId: string }
@@ -57,8 +57,7 @@ export function useSubscriptionCheckout() {
   const busyRef = useRef(false);
   // What the order the server just created is worth, in paise. Captured at
   // checkout creation because that is the only place the real amount is
-  // known, and read back only once a payment is confirmed. Null for the
-  // recurring path, where the server hands back a subscription id and no price.
+  // known, and read back only once a payment is confirmed.
   const checkoutValueRef = useRef<number | null>(null);
 
   /**
@@ -106,6 +105,7 @@ export function useSubscriptionCheckout() {
               kind: "success",
               invoiceNumber: result.invoice_number ?? null,
               accessEndsAt: result.current_period_ends_at ?? null,
+              offerMissed: result.offer_status === "sold_out",
             });
             return;
           } catch {
@@ -175,7 +175,7 @@ export function useSubscriptionCheckout() {
   );
 
   const startCheckout = useCallback(
-    async (planCode: string) => {
+    async (planCode: string, couponCode: string | null = null) => {
       if (!clinicId || busyRef.current) return;
 
       busyRef.current = true;
@@ -201,13 +201,11 @@ export function useSubscriptionCheckout() {
         let options: ConstructorParameters<NonNullable<typeof window.Razorpay>>[0];
 
         if (recurring) {
-          // The recurring endpoint hands back a subscription id and no price, so
-          // the reported Purchase value falls back to the catalogued price —
-          // but only when the plan on file is the very plan being bought.
-          // Anything less exact is better reported as no value than a wrong one.
-          checkoutValueRef.current =
-            subscription?.plan_code === planCode ? subscription.base_price_paise : null;
-          const [checkout, scriptLoaded] = await Promise.all([createRecurringSubscription(clinicId, planCode), scriptLoad]);
+          const [checkout, scriptLoaded] = await Promise.all([
+            createRecurringSubscription(clinicId, planCode, couponCode),
+            scriptLoad,
+          ]);
+          checkoutValueRef.current = checkout.amount ?? null;
           if (!scriptLoaded || !window.Razorpay) {
             throw new Error("Couldn't open checkout. Check your internet connection and try again.");
           }
@@ -230,7 +228,7 @@ export function useSubscriptionCheckout() {
             },
           };
         } else {
-          const [checkout, scriptLoaded] = await Promise.all([createSubscriptionCheckout(clinicId, planCode), scriptLoad]);
+          const [checkout, scriptLoaded] = await Promise.all([createSubscriptionCheckout(clinicId, planCode, couponCode), scriptLoad]);
           if (!scriptLoaded || !window.Razorpay) {
             throw new Error("Couldn't open checkout. Check your internet connection and try again.");
           }
@@ -274,8 +272,6 @@ export function useSubscriptionCheckout() {
       userEmail,
       billing?.recurring_monthly_available,
       subscription?.current_period_ends_at,
-      subscription?.plan_code,
-      subscription?.base_price_paise,
       confirmOneTimePayment,
       confirmRecurring,
       finish,

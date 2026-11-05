@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 export interface CheckoutRequest {
   clinicId: string;
   planCode: string;
+  couponCode?: unknown;
 }
 
 export interface VerifyPaymentRequest {
@@ -120,9 +121,28 @@ interface RazorpayPayment {
   id: string;
   order_id: string;
   amount: number;
+  amount_refunded?: number;
+  captured?: boolean;
   currency: string;
   status: string;
 }
+
+/** The server's price; same shape and source as the Edge Function checkout. */
+interface CheckoutQuote {
+  reference_paise: number;
+  discount_paise: number;
+  taxable_paise: number;
+  gst_rate_bps: number;
+  gst_paise: number;
+  payable_paise: number;
+  access_months: number;
+  coupon_code: string | null;
+  coupon_status: string;
+  coupon_message: string | null;
+}
+
+const keyModeOf = (keyId: string | undefined): "test" | "live" =>
+  keyId?.startsWith("rzp_test_") ? "test" : "live";
 
 async function fetchRazorpayPayment(
   paymentId: string,
@@ -166,6 +186,11 @@ export async function runCreateCheckout(
       return fail(400, "clinicId and planCode are required");
     }
 
+    const rawCoupon = body?.couponCode;
+    if (rawCoupon !== undefined && rawCoupon !== null && (typeof rawCoupon !== "string" || rawCoupon.length > 64)) {
+      return fail(400, "That code isn't valid. Check it and try again.");
+    }
+
     const auth = await authorizeMemberForPlan(supabaseEnv, authHeader, clinicId, planCode);
     if ("error" in auth) return auth.error;
     const { user, plan } = auth;
@@ -184,7 +209,7 @@ export async function runCreateCheckout(
     }
 
     const billing = context as { recurring_enabled?: boolean; recurring_pilot?: boolean; live_subscription?: unknown };
-    const keyMode = razorpay.keyId.startsWith("rzp_live_") ? "live" : "test";
+    const keyMode = keyModeOf(razorpay.keyId);
     const recurringEnabled = Boolean(billing.recurring_enabled) || (Boolean(billing.recurring_pilot) && keyMode === "test");
     const billingMode = (plan as { billing_mode?: string }).billing_mode;
 
@@ -195,7 +220,22 @@ export async function runCreateCheckout(
       return fail(409, "Automatic renewal is on for this clinic. Please try again in a moment.");
     }
 
-    // One-time Razorpay Order for the plan's full price (never a recurring subscription)
+    const { data: quoteData, error: quoteErr } = await billingClient.rpc("billing_checkout_quote", {
+      p_clinic_id: clinicId,
+      p_plan_code: plan.code,
+      p_coupon_code: rawCoupon || null,
+      p_key_mode: keyMode,
+    });
+    if (quoteErr || !quoteData) {
+      console.error("[subscription/checkout] quote failed", quoteErr?.code, quoteErr?.message);
+      return fail(500, CHECKOUT_FAILED);
+    }
+    const quote = quoteData as CheckoutQuote;
+    if (["invalid", "expired", "ineligible"].includes(quote.coupon_status)) {
+      return fail(422, quote.coupon_message ?? "That code can't be used.");
+    }
+
+    // One-time Razorpay Order for the quoted amount (never a recurring subscription)
     const rzpRes = await fetch(`${RAZORPAY_API}/orders`, {
       method: "POST",
       headers: {
@@ -203,7 +243,7 @@ export async function runCreateCheckout(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        amount: plan.base_price_paise,
+        amount: quote.payable_paise,
         currency: plan.currency,
         receipt: `HLV-ORD-${Date.now().toString(36).toUpperCase()}`,
         notes: {
@@ -224,7 +264,7 @@ export async function runCreateCheckout(
     }
 
     const order = (await rzpRes.json()) as { id?: unknown; amount?: unknown };
-    if (typeof order.id !== "string" || order.amount !== plan.base_price_paise) {
+    if (typeof order.id !== "string" || order.amount !== quote.payable_paise) {
       console.error("[subscription/checkout] Unexpected Razorpay order response");
       return fail(502, CHECKOUT_FAILED);
     }
@@ -236,9 +276,16 @@ export async function runCreateCheckout(
       plan_id: plan.id,
       gateway: "razorpay",
       gateway_order_id: order.id,
-      amount_paise: plan.base_price_paise,
+      amount_paise: quote.payable_paise,
       currency: plan.currency,
       status: "created",
+      key_mode: keyMode,
+      coupon_code: quote.coupon_status === "applied" ? quote.coupon_code : null,
+      reference_amount_paise: quote.reference_paise,
+      discount_paise: quote.discount_paise,
+      taxable_amount_paise: quote.taxable_paise,
+      tax_amount_paise: quote.gst_paise,
+      gst_rate_bps: quote.gst_rate_bps,
       metadata: {
         user_id: user.id,
         user_email: user.email,
@@ -255,13 +302,13 @@ export async function runCreateCheckout(
       status: 200,
       body: {
         orderId: order.id,
-        amount: plan.base_price_paise,
+        amount: quote.payable_paise,
         currency: plan.currency,
         keyId: razorpay.keyId,
         planName: plan.name,
         planCode: plan.code,
         interval: plan.interval,
-        entitlementMonths: plan.entitlement_months,
+        entitlementMonths: quote.access_months,
       },
     };
   } catch (err) {
@@ -307,7 +354,23 @@ export async function runVerifyPayment(
 
     const auth = await authorizeMemberForPlan(supabaseEnv, authHeader, clinicId, planCode);
     if ("error" in auth) return auth.error;
-    const { plan } = auth;
+
+    // The order row holds the server-quoted amount; the plan's price may differ.
+    const keyMode = keyModeOf(razorpay.keyId);
+    const adminClient = createClient(supabaseEnv.url, supabaseEnv.serviceKey);
+    const { data: orderRow, error: orderErr } = await adminClient
+      .from("subscription_payments")
+      .select("clinic_id, amount_paise, currency")
+      .eq("gateway_order_id", razorpay_order_id)
+      .eq("key_mode", keyMode)
+      .maybeSingle();
+    if (orderErr) {
+      console.error("[subscription/verify] Order lookup failed", orderErr.code, orderErr.message);
+      return fail(500, CONFIRMATION_FAILED);
+    }
+    if (!orderRow || orderRow.clinic_id !== clinicId) {
+      return fail(400, "Payment details do not match this order.");
+    }
 
     // 1. Checkout signature: HMAC-SHA256(order_id|payment_id, key secret)
     const expectedSignature = hmacSha256Hex(razorpay.keySecret, `${razorpay_order_id}|${razorpay_payment_id}`);
@@ -324,7 +387,7 @@ export async function runVerifyPayment(
         {
           method: "POST",
           headers: { Authorization: razorpay.authorization, "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: plan.base_price_paise, currency: plan.currency }),
+          body: JSON.stringify({ amount: orderRow.amount_paise, currency: orderRow.currency }),
         },
       );
       if (!captureRes.ok) {
@@ -340,8 +403,8 @@ export async function runVerifyPayment(
 
     if (
       payment.order_id !== razorpay_order_id ||
-      payment.amount !== plan.base_price_paise ||
-      String(payment.currency).toUpperCase() !== String(plan.currency).toUpperCase()
+      payment.amount !== orderRow.amount_paise ||
+      String(payment.currency).toUpperCase() !== String(orderRow.currency).toUpperCase()
     ) {
       return fail(400, "Payment details do not match this order.");
     }
@@ -351,7 +414,6 @@ export async function runVerifyPayment(
     }
 
     // 3. Atomic, idempotent confirmation bound to the server-created order
-    const adminClient = createClient(supabaseEnv.url, supabaseEnv.serviceKey);
     const { data: confirmResult, error: confirmErr } = await adminClient.rpc(
       "confirm_subscription_payment",
       {
@@ -360,8 +422,9 @@ export async function runVerifyPayment(
         p_gateway_order_id: razorpay_order_id,
         p_gateway_payment_id: razorpay_payment_id,
         p_gateway_signature: razorpay_signature,
-        p_amount_paise: plan.base_price_paise,
-        p_currency: plan.currency,
+        p_amount_paise: orderRow.amount_paise,
+        p_currency: orderRow.currency,
+        p_key_mode: keyMode,
       },
     );
 
@@ -434,6 +497,7 @@ export async function runRazorpayWebhook(
     const eventType = typeof payload.event === "string" ? payload.event : "unknown";
 
     const adminClient = createClient(supabaseEnv.url, supabaseEnv.serviceKey);
+    const keyMode = keyModeOf(env.RAZORPAY_KEY_ID);
 
     // 1. Idempotency record
     let eventRowId: string;
@@ -520,6 +584,7 @@ export async function runRazorpayWebhook(
           p_gateway_signature: "webhook_verified",
           p_amount_paise: amountPaise,
           p_currency: currency,
+          p_key_mode: keyMode,
         });
 
         if (confirmErr) {
@@ -541,12 +606,46 @@ export async function runRazorpayWebhook(
           p_gateway_payment_id: paymentEntity?.id ?? null,
           p_error_code: paymentEntity?.error_code ?? null,
           p_error_description: paymentEntity?.error_description ?? null,
+          p_key_mode: keyMode,
         });
 
         if (failureErr) {
           processStatus = "failed";
           processError = failureErr.message;
           retryable = !PERMANENT_ERROR_CODES.has(failureErr.code ?? "");
+        }
+      }
+    } else if (eventType === "refund.processed") {
+      const refundEntity = payload.payload?.refund?.entity;
+      const paymentId: string | undefined = refundEntity?.payment_id ?? paymentEntity?.id;
+      const razorpay = readRazorpayCredentials(env);
+      const refunded = paymentId && razorpay ? await fetchRazorpayPayment(paymentId, razorpay.authorization) : null;
+
+      if (!paymentId) {
+        processStatus = "ignored";
+        processError = "Event has no payment reference";
+      } else if (!refunded) {
+        processStatus = "failed";
+        processError = "Payment lookup failed";
+        retryable = true;
+      } else if (refunded.captured === false) {
+        // Automatic refund of an uncaptured payment: it never bought anything.
+        processStatus = "ignored";
+        processError = "Auto-refund of an uncaptured payment";
+      } else {
+        const { error: refundErr } = await adminClient.rpc("record_subscription_refund", {
+          p_gateway_payment_id: paymentId,
+          p_gateway_refund_id: refundEntity?.id ?? null,
+          p_amount_refunded_paise: refunded.amount_refunded ?? 0,
+          p_key_mode: keyMode,
+        });
+        if (refundErr?.code === "P0002") {
+          processStatus = "ignored";
+          processError = "Payment was not made through Healvo checkout";
+        } else if (refundErr) {
+          processStatus = "failed";
+          processError = refundErr.message;
+          retryable = !PERMANENT_ERROR_CODES.has(refundErr.code ?? "");
         }
       }
     } else {

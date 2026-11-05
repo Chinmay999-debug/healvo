@@ -68,7 +68,7 @@ Settings
 - Account: Profile (photo, Full name, Email, Phone, Professional title), Security (change password), Appearance (theme) and Log out.
 
 Plans
-- New clinics get a 15-day free trial. Core has clinic management and online booking. Premium adds Healvo AI and WhatsApp appointment confirmations. During the trial Healvo AI is included; WhatsApp confirmations need Premium.
+- New clinics get a 30-Day Free Trial with no payment. After it ends the clinic must choose a plan to keep using Healvo. Launch codes are entered in Settings > Subscription. Core has clinic management and online booking. Premium adds Healvo AI and WhatsApp appointment confirmations. During the trial Healvo AI is included; WhatsApp confirmations need Premium.
 
 Things Healvo cannot do
 - Healvo AI cannot change anything: it cannot add, edit, book, cancel, bill, record payments or send messages. It can only explain the screens above and read the clinic summary it is given.

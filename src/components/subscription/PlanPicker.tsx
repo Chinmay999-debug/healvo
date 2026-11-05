@@ -1,15 +1,23 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   Check,
+  CheckCircle2,
   LoaderCircle,
   Lock,
   Minus,
   Sparkles,
+  Tag,
+  X,
 } from "lucide-react";
 import { Button } from "../ui/Button";
+import { Modal } from "../ui/Modal";
+import { inputClass } from "../ui/fieldStyles";
 import { WHATSAPP_GREEN, WhatsAppIcon } from "../ui/WhatsAppIcon";
 import { cn } from "../../lib/utils";
-import { formatPriceINR, getActiveSubscriptionPlans } from "../../services/subscription";
+import { useAuth } from "../../state/authContext";
+import { checkoutRouteFor } from "../../services/platformBilling";
+import { formatExactINR, formatPriceINR, getCheckoutQuotes } from "../../services/subscription";
+import type { CheckoutQuote, FoundingOffer } from "../../types/subscription";
 import type { CheckoutPhase } from "../../state/useSubscriptionCheckout";
 
 export const CORE_PLAN_CODE = "core";
@@ -17,18 +25,20 @@ export const PREMIUM_PLAN_CODE = "premium";
 export const CORE_ANNUAL_PLAN_CODE = "core_annual";
 export const PREMIUM_ANNUAL_PLAN_CODE = "premium_annual";
 
-const PLAN_CODES = [CORE_PLAN_CODE, PREMIUM_PLAN_CODE, CORE_ANNUAL_PLAN_CODE, PREMIUM_ANNUAL_PLAN_CODE];
 const ANNUAL_CODES = [CORE_ANNUAL_PLAN_CODE, PREMIUM_ANNUAL_PLAN_CODE];
 
 type Interval = "monthly" | "annual";
 type Tier = "Core" | "Premium";
 
-/** Shown until the live catalog loads (and if it can't). Mirrors subscription_plans. */
-const DEFAULT_PRICES: Record<string, number> = {
-  [CORE_PLAN_CODE]: 49900,
-  [PREMIUM_PLAN_CODE]: 99900,
-  [CORE_ANNUAL_PLAN_CODE]: 598800,
-  [PREMIUM_ANNUAL_PLAN_CODE]: 1198800,
+/**
+ * Standard and launch prices, shown until the server's quotes load (and if they
+ * can't). Display only: what is charged always comes from the server.
+ */
+const DEFAULT_PRICES: Record<string, { reference: number; launch: number }> = {
+  [CORE_PLAN_CODE]: { reference: 99800, launch: 49900 },
+  [PREMIUM_PLAN_CODE]: { reference: 199800, launch: 99900 },
+  [CORE_ANNUAL_PLAN_CODE]: { reference: 1197600, launch: 598800 },
+  [PREMIUM_ANNUAL_PLAN_CODE]: { reference: 2397600, launch: 1198800 },
 };
 
 /** Every line is a real Healvo feature, included in both plans. */
@@ -75,9 +85,11 @@ export interface PlanPickerProps {
   currentPlanCode?: string | null;
   phase: CheckoutPhase;
   pendingPlanCode: string | null;
-  onSelect: (planCode: string) => void;
+  onSelect: (planCode: string, couponCode: string | null) => void;
   recurringMonthly?: boolean;
   hasPaidTime?: boolean;
+  /** Formatted end of paid access, when there is paid time left. */
+  paidThrough?: string | null;
   autoRenewOn?: boolean;
   monthlyLocked?: boolean;
   /** The clinic is in its free trial: explain what the trial does and doesn't include. */
@@ -89,26 +101,81 @@ export function PlanPicker({
   phase,
   pendingPlanCode,
   onSelect,
+  recurringMonthly = false,
+  paidThrough = null,
   autoRenewOn = false,
   trialActive = false,
 }: PlanPickerProps) {
+  const { activeClinic } = useAuth();
+  const clinicId = activeClinic?.id;
   const currentIsAnnual = currentPlanCode ? ANNUAL_CODES.includes(currentPlanCode) : false;
   const [interval, setBillingInterval] = useState<Interval>(currentIsAnnual ? "annual" : "monthly");
-  const [prices, setPrices] = useState<Record<string, number>>(DEFAULT_PRICES);
+  const [quotes, setQuotes] = useState<Record<string, CheckoutQuote>>({});
+  const [offer, setOffer] = useState<FoundingOffer | null>(null);
+  const [coupon, setCoupon] = useState<CouponState>({ applied: null, feedback: null });
+  const [checkingCoupon, setCheckingCoupon] = useState(false);
+  const [reviewCode, setReviewCode] = useState<string | null>(null);
+
+  const loadQuotes = useCallback(
+    async (code: string | null) => {
+      if (!clinicId) return null;
+      const result = await getCheckoutQuotes(clinicId, code);
+      setQuotes(Object.fromEntries(result.quotes.map((q) => [q.plan_code, q])));
+      setOffer(result.offer);
+      return result;
+    },
+    [clinicId],
+  );
 
   useEffect(() => {
-    getActiveSubscriptionPlans()
-      .then((apiPlans) => {
-        const live: Record<string, number> = {};
-        for (const p of apiPlans) {
-          if (PLAN_CODES.includes(p.code)) live[p.code] = p.base_price_paise;
-        }
-        if (live[CORE_PLAN_CODE] && live[PREMIUM_PLAN_CODE]) {
-          setPrices((prev) => ({ ...prev, ...live }));
-        }
-      })
-      .catch(() => {});
-  }, []);
+    loadQuotes(null).catch(() => {});
+  }, [loadQuotes]);
+
+  const applyCoupon = async (code: string) => {
+    setCheckingCoupon(true);
+    try {
+      const result = await loadQuotes(code);
+      const first = result?.quotes[0];
+      if (!first) throw new Error("no quote");
+      setCoupon(
+        first.coupon_status === "applied"
+          ? { applied: first.coupon_code, feedback: { tone: "ok", text: "Launch code applied." } }
+          : {
+              applied: null,
+              feedback: {
+                // A clinic that already has launch pricing has lost nothing.
+                tone: first.price_tier === "launch" ? "ok" : "bad",
+                text: first.coupon_message ?? "That code can't be used.",
+              },
+            },
+      );
+    } catch {
+      setCoupon({ applied: null, feedback: { tone: "bad", text: "Couldn't check that code. Please try again." } });
+    } finally {
+      setCheckingCoupon(false);
+    }
+  };
+
+  // A plan can only be reviewed with the server's price in hand.
+  const reviewPlan = async (code: string) => {
+    if (!quotes[code]) {
+      try {
+        await loadQuotes(coupon.applied);
+      } catch {
+        setCoupon((prev) => ({
+          ...prev,
+          feedback: { tone: "bad", text: "Couldn't load prices. Check your connection and try again." },
+        }));
+        return;
+      }
+    }
+    setReviewCode(code);
+  };
+
+  const removeCoupon = () => {
+    setCoupon({ applied: null, feedback: null });
+    loadQuotes(null).catch(() => {});
+  };
 
   const annual = interval === "annual";
   const coreCode = annual ? CORE_ANNUAL_PLAN_CODE : CORE_PLAN_CODE;
@@ -130,20 +197,37 @@ export function PlanPicker({
     return { label: `Switch to ${tier}${suffix}`, disabled: false };
   };
 
+  const hasLaunchPricing = Object.values(quotes).some((q) => q.price_tier === "launch");
+
   const cardProps = (code: string) => ({
     code,
-    pricePaise: prices[code] ?? DEFAULT_PRICES[code],
+    quote: quotes[code] ?? null,
     annual,
+    recurring: recurringMonthly,
     isCurrent: currentPlanCode === code,
     action: getAction(code),
     isPending: pendingPlanCode === code,
     phase,
-    onSelect,
+    onSelect: (code: string) => void reviewPlan(code),
   });
+
+  const gstRate = Object.values(quotes)[0]?.gst_rate_bps ?? 0;
+  const reviewing = reviewCode ? quotes[reviewCode] ?? null : null;
 
   return (
     <div>
-      <BillingToggle value={interval} onChange={setBillingInterval} />
+      {offer?.available && <FoundingBanner offer={offer} />}
+
+      <BillingToggle value={interval} onChange={setBillingInterval} offerAvailable={Boolean(offer?.available)} />
+
+      <CouponField
+        applied={coupon.applied}
+        feedback={coupon.feedback}
+        checking={checkingCoupon}
+        hidden={hasLaunchPricing && !coupon.applied && !coupon.feedback}
+        onApply={applyCoupon}
+        onRemove={removeCoupon}
+      />
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <CorePlanCard {...cardProps(coreCode)} />
@@ -154,7 +238,7 @@ export function PlanPicker({
 
       {trialActive && (
         <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-canvas)] px-4 py-3 text-[12.5px]">
-          <span className="font-bold text-[var(--color-ink)]">During your free trial</span>
+          <span className="font-bold text-[var(--color-ink)]">During your 30-Day Free Trial</span>
           <span className="inline-flex items-center gap-1.5 text-[var(--color-ink)]">
             <Check size={14} strokeWidth={3} className="text-[var(--color-mint-text)]" />
             AI Assistant included
@@ -167,15 +251,244 @@ export function PlanPicker({
       )}
 
       <p className="mt-4 text-center text-[12px] text-[var(--color-muted)]">
-        Prices in INR, plus applicable GST.
+        {gstRate > 0 ? "Prices in INR, plus GST." : "Prices in INR. No GST is charged right now."}
+      </p>
+
+      <CheckoutSummary
+        quote={reviewing}
+        offer={offer}
+        recurring={Boolean(reviewCode) && checkoutRouteFor(reviewCode ?? "", recurringMonthly) === "recurring"}
+        trialActive={trialActive}
+        paidThrough={paidThrough}
+        onClose={() => setReviewCode(null)}
+        onConfirm={() => {
+          if (!reviewCode) return;
+          setReviewCode(null);
+          onSelect(reviewCode, coupon.applied);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- coupon -- */
+
+interface CouponState {
+  applied: string | null;
+  feedback: { tone: "ok" | "bad"; text: string } | null;
+}
+
+function CouponField({
+  applied,
+  feedback,
+  checking,
+  hidden,
+  onApply,
+  onRemove,
+}: CouponState & {
+  checking: boolean;
+  hidden: boolean;
+  onApply: (code: string) => void;
+  onRemove: () => void;
+}) {
+  const [value, setValue] = useState("");
+
+  if (hidden) return null;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (value.trim() && !checking) onApply(value.trim());
+  };
+
+  return (
+    <div className="mx-auto mt-5 max-w-md">
+      {applied ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-mint-text)]/25 bg-[var(--color-mint-bg)] px-3.5 py-2.5 text-[13px]">
+          <span className="inline-flex min-w-0 items-center gap-2 font-bold text-[var(--color-mint-text)]">
+            <CheckCircle2 size={15} strokeWidth={2.5} className="shrink-0" />
+            <span className="truncate">{applied} applied</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setValue("");
+              onRemove();
+            }}
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 text-[12.5px] font-semibold text-[var(--color-mint-text)] hover:underline"
+          >
+            <X size={13} strokeWidth={2.5} />
+            Remove
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Tag
+              size={14}
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--color-muted-soft)]"
+            />
+            <input
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="Launch code, e.g. NEWUSER50"
+              aria-label="Launch code"
+              maxLength={64}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              className={cn(inputClass, "pl-8 uppercase placeholder:normal-case")}
+            />
+          </div>
+          <Button type="submit" variant="outline" disabled={checking || !value.trim()} className="shrink-0 rounded-xl">
+            {checking ? <LoaderCircle size={14} className="animate-spin" /> : "Apply"}
+          </Button>
+        </form>
+      )}
+      {feedback && !applied && (
+        <p
+          role={feedback.tone === "bad" ? "alert" : "status"}
+          className={cn(
+            "mt-2 text-[12.5px] font-semibold",
+            feedback.tone === "bad" ? "text-[var(--color-danger-text)]" : "text-[var(--color-mint-text)]",
+          )}
+        >
+          {feedback.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FoundingBanner({ offer }: { offer: FoundingOffer }) {
+  return (
+    <div className="mb-5 rounded-xl border border-[var(--color-teal)]/25 bg-[var(--color-teal)]/[0.07] px-4 py-3 text-center">
+      <p className="text-[11px] font-extrabold tracking-[0.1em] text-[var(--color-teal)] uppercase">
+        Founding Clinic Offer
+      </p>
+      <p className="mt-1 text-[13.5px] font-semibold text-[var(--color-ink)]">
+        Get {offer.bonus_months} additional months FREE on annual plans.
+      </p>
+      <p className="mt-0.5 text-[12.5px] text-[var(--color-muted)]">
+        Available for the first {offer.slot_limit} clinics · {offer.remaining} left
       </p>
     </div>
   );
 }
 
+/* --------------------------------------------------------------- summary -- */
+
+function SummaryRow({ label, value, strong = false, accent = false }: { label: string; value: string; strong?: boolean; accent?: boolean }) {
+  return (
+    <div className={cn("flex justify-between gap-4", strong ? "text-[15px] font-extrabold text-[var(--color-ink)]" : "text-[13px]")}>
+      <dt className={strong ? undefined : "text-[var(--color-muted)]"}>{label}</dt>
+      <dd
+        className={cn(
+          "tabular-nums",
+          accent ? "font-bold text-[var(--color-mint-text)]" : !strong && "font-semibold text-[var(--color-ink)]",
+        )}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function CheckoutSummary({
+  quote,
+  offer,
+  recurring,
+  trialActive,
+  paidThrough,
+  onClose,
+  onConfirm,
+}: {
+  quote: CheckoutQuote | null;
+  offer: FoundingOffer | null;
+  recurring: boolean;
+  trialActive: boolean;
+  paidThrough: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!quote) return null;
+
+  const annual = quote.interval === "year";
+  const payable = formatExactINR(quote.payable_paise);
+  // Autopay on top of remaining paid time charges nothing today.
+  const chargesLater = recurring && Boolean(paidThrough);
+  const tier = quote.plan_code.startsWith("premium") ? "Premium" : "Core";
+
+  return (
+    <Modal open onClose={onClose} title={`Healvo ${tier} · ${annual ? "Annual" : "Monthly"}`} className="max-w-md">
+      <dl className="space-y-2.5">
+        <SummaryRow label="Standard price" value={formatExactINR(quote.reference_paise)} />
+        <SummaryRow
+          label={quote.discount_paise > 0 ? (quote.coupon_code ? `With code ${quote.coupon_code}` : "Launch pricing") : "Launch code"}
+          value={quote.discount_paise > 0 ? `− ${formatExactINR(quote.discount_paise)}` : "Not applied"}
+          accent={quote.discount_paise > 0}
+        />
+        <SummaryRow
+          label={quote.gst_rate_bps > 0 ? `GST (${quote.gst_rate_bps / 100}%)` : "GST"}
+          value={quote.gst_rate_bps > 0 ? formatExactINR(quote.gst_paise) : "Not charged"}
+        />
+        <div className="border-t border-[var(--color-border)] pt-2.5">
+          <SummaryRow label={chargesLater ? `Due on ${paidThrough}` : "Payable now"} value={payable} strong />
+        </div>
+      </dl>
+
+      {annual && (
+        <p className="mt-4 rounded-lg bg-[var(--color-mint-bg)] px-3 py-2.5 text-[13px] font-semibold text-[var(--color-mint-text)]">
+          {quote.bonus_months > 0
+            ? `${quote.paid_months} months paid + ${quote.bonus_months} months FREE = ${quote.access_months} months access.`
+            : `${quote.access_months} months access.`}
+        </p>
+      )}
+
+      <ul className="mt-3 space-y-1.5 text-[12.5px] leading-relaxed text-[var(--color-muted)]">
+        {annual && quote.bonus_months > 0 && offer && (
+          <li>
+            The free months are reserved when your payment succeeds, for the first {offer.slot_limit} clinics.{" "}
+            {offer.remaining} left right now.
+          </li>
+        )}
+        {annual ? (
+          <li>One payment. It doesn't renew by itself.</li>
+        ) : recurring ? (
+          <li>Renews automatically at {payable} a month until you stop it.</li>
+        ) : (
+          <li>Covers one month. It doesn't renew by itself.</li>
+        )}
+        {quote.price_basis === "list" && (
+          <li>Have a launch code? Close this and apply it first: you can't add one after paying.</li>
+        )}
+        {trialActive && <li>Paying now ends your free trial today, and your paid plan starts straight away.</li>}
+        {paidThrough && !chargesLater && <li>This starts after your current plan ends on {paidThrough}.</li>}
+        {chargesLater && <li>Nothing extra is charged today. Your new plan starts on {paidThrough}.</li>}
+      </ul>
+
+      <div className="mt-5 flex gap-2">
+        <Button variant="outline" onClick={onClose} className="flex-1 justify-center rounded-xl">
+          Back
+        </Button>
+        <Button onClick={onConfirm} className="flex-[2] justify-center rounded-xl font-bold">
+          {chargesLater ? "Set up autopay" : `Pay ${payable}`}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 /* ---------------------------------------------------------------- toggle -- */
 
-function BillingToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
+function BillingToggle({
+  value,
+  onChange,
+  offerAvailable,
+}: {
+  value: Interval;
+  onChange: (v: Interval) => void;
+  offerAvailable: boolean;
+}) {
   const annual = value === "annual";
   return (
     <div className="flex flex-col items-center gap-3">
@@ -211,7 +524,9 @@ function BillingToggle({ value, onChange }: { value: Interval; onChange: (v: Int
       </div>
 
       <div className="flex min-h-[24px] items-center gap-2 text-[12.5px]">
-        {annual ? (
+        {!offerAvailable ? (
+          <span className="text-[var(--color-muted)]">Monthly or yearly, same features.</span>
+        ) : annual ? (
           <span key="annual" className="plan-fade-in inline-flex items-center gap-2">
             <FreeMonthsBadge />
             <span className="font-semibold text-[var(--color-ink)]">Pay for 12 months, get 14 months</span>
@@ -250,8 +565,9 @@ function FreeMonthsBadge({ onDark = false }: { onDark?: boolean }) {
 
 interface PlanCardProps {
   code: string;
-  pricePaise: number;
+  quote: CheckoutQuote | null;
   annual: boolean;
+  recurring: boolean;
   isCurrent: boolean;
   action: { label: string; disabled: boolean };
   isPending: boolean;
@@ -259,17 +575,39 @@ interface PlanCardProps {
   onSelect: (planCode: string) => void;
 }
 
-function PriceBlock({ pricePaise, annual, onDark }: { pricePaise: number; annual: boolean; onDark: boolean }) {
+function PriceBlock({
+  code,
+  quote,
+  annual,
+  recurring,
+  onDark,
+}: {
+  code: string;
+  quote: CheckoutQuote | null;
+  annual: boolean;
+  recurring: boolean;
+  onDark: boolean;
+}) {
+  const fallback = DEFAULT_PRICES[code];
+  const reference = quote?.reference_paise ?? fallback.reference;
+  const launch = quote?.launch_paise ?? fallback.launch;
+  const discounted = quote?.price_tier === "launch";
+  const price = discounted ? launch : reference;
+  const bonus = quote?.bonus_months ?? 0;
+
   return (
-    <div key={`${pricePaise}-${annual}`} className="plan-fade-in mt-5">
-      <div className="flex items-baseline gap-1.5">
+    <div key={`${code}-${price}-${bonus}`} className="plan-fade-in mt-5">
+      <p className={cn("min-h-[20px] text-[12.5px] font-semibold tabular-nums", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
+        {discounted && `Standard price ${formatPriceINR(reference)}`}
+      </p>
+      <div className="mt-1 flex items-baseline gap-1.5">
         <span
           className={cn(
             "text-[38px] leading-none font-extrabold tracking-[-0.035em] tabular-nums",
             onDark ? "text-white" : "text-[var(--color-ink)]",
           )}
         >
-          {formatPriceINR(pricePaise)}
+          {formatPriceINR(price)}
         </span>
         {!annual && (
           <span className={cn("text-[14px] font-semibold", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
@@ -277,17 +615,22 @@ function PriceBlock({ pricePaise, annual, onDark }: { pricePaise: number; annual
           </span>
         )}
       </div>
+      {!discounted && (
+        <p className={cn("mt-1.5 text-[12.5px] font-semibold", onDark ? "text-[#5eead4]" : "text-[var(--color-teal)]")}>
+          {formatPriceINR(launch)} with a launch code
+        </p>
+      )}
       <div className="mt-2.5 flex min-h-[22px] flex-wrap items-center gap-2">
-        {annual ? (
+        {annual && bonus > 0 ? (
           <>
             <FreeMonthsBadge onDark={onDark} />
             <span className={cn("text-[12.5px] font-semibold", onDark ? "text-white/80" : "text-[var(--color-ink)]")}>
-              Pay for 12 months, get 14 months
+              Pay for 12 months, get {12 + bonus} months
             </span>
           </>
         ) : (
           <span className={cn("text-[12.5px]", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
-            Billed monthly
+            {annual ? "12 months access" : recurring ? "Billed monthly" : "Pay each month. No auto-renewal."}
           </span>
         )}
       </div>
@@ -328,7 +671,7 @@ function CtaContent({ isPending, phase, locked, label }: { isPending: boolean; p
   );
 }
 
-function CorePlanCard({ code, pricePaise, annual, isCurrent, action, isPending, phase, onSelect }: PlanCardProps) {
+function CorePlanCard({ code, quote, annual, recurring, isCurrent, action, isPending, phase, onSelect }: PlanCardProps) {
   const locked = action.disabled && !isPending;
   return (
     <div
@@ -345,7 +688,7 @@ function CorePlanCard({ code, pricePaise, annual, isCurrent, action, isPending, 
         Everything a clinic needs to run day-to-day
       </p>
 
-      <PriceBlock pricePaise={pricePaise} annual={annual} onDark={false} />
+      <PriceBlock code={code} quote={quote} annual={annual} recurring={recurring} onDark={false} />
 
       <ul className="mt-5 space-y-2.5 border-t border-[var(--color-border)] pt-5 text-[13px]">
         {CORE_FEATURES.map((feature) => (
@@ -371,7 +714,7 @@ function CorePlanCard({ code, pricePaise, annual, isCurrent, action, isPending, 
   );
 }
 
-function PremiumPlanCard({ code, pricePaise, annual, isCurrent, action, isPending, phase, onSelect }: PlanCardProps) {
+function PremiumPlanCard({ code, quote, annual, recurring, isCurrent, action, isPending, phase, onSelect }: PlanCardProps) {
   const locked = action.disabled && !isPending;
   return (
     <div
@@ -413,7 +756,7 @@ function PremiumPlanCard({ code, pricePaise, annual, isCurrent, action, isPendin
       </p>
 
       <div className="relative">
-        <PriceBlock pricePaise={pricePaise} annual={annual} onDark />
+        <PriceBlock code={code} quote={quote} annual={annual} recurring={recurring} onDark />
       </div>
 
       <ul className="relative mt-5 space-y-2.5 border-t border-white/10 pt-5 text-[13px]">
