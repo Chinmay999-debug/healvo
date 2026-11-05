@@ -45,9 +45,6 @@ export function CheckoutOutcomeBanner({
     message = until
       ? `Payment received. Your plan is active until ${formatAccessDate(until)}.`
       : "Payment received. Your plan is active.";
-    if (outcome.offerMissed) {
-      message += " The Founding Clinic offer filled up just before your payment, so this plan has 12 months of access.";
-    }
   } else if (outcome.kind === "autorenew_on") {
     message = outcome.firstChargeAt
       ? `Automatic renewal is on. Your first payment is on ${formatAccessDate(outcome.firstChargeAt)}.`

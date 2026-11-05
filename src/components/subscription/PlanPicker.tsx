@@ -17,7 +17,7 @@ import { cn } from "../../lib/utils";
 import { useAuth } from "../../state/authContext";
 import { checkoutRouteFor } from "../../services/platformBilling";
 import { formatExactINR, formatPriceINR, getCheckoutQuotes } from "../../services/subscription";
-import type { CheckoutQuote, FoundingOffer } from "../../types/subscription";
+import type { CheckoutQuote } from "../../types/subscription";
 import type { CheckoutPhase } from "../../state/useSubscriptionCheckout";
 
 export const CORE_PLAN_CODE = "core";
@@ -31,14 +31,14 @@ type Interval = "monthly" | "annual";
 type Tier = "Core" | "Premium";
 
 /**
- * Standard and launch prices, shown until the server's quotes load (and if they
- * can't). Display only: what is charged always comes from the server.
+ * Standard prices, shown until the server's quotes load (and if they can't).
+ * Display only: what is charged always comes from the server.
  */
-const DEFAULT_PRICES: Record<string, { reference: number; launch: number }> = {
-  [CORE_PLAN_CODE]: { reference: 99800, launch: 49900 },
-  [PREMIUM_PLAN_CODE]: { reference: 199800, launch: 99900 },
-  [CORE_ANNUAL_PLAN_CODE]: { reference: 1197600, launch: 598800 },
-  [PREMIUM_ANNUAL_PLAN_CODE]: { reference: 2397600, launch: 1198800 },
+const DEFAULT_PRICES: Record<string, number> = {
+  [CORE_PLAN_CODE]: 99800,
+  [PREMIUM_PLAN_CODE]: 199800,
+  [CORE_ANNUAL_PLAN_CODE]: 1197600,
+  [PREMIUM_ANNUAL_PLAN_CODE]: 2397600,
 };
 
 /** Every line is a real Healvo feature, included in both plans. */
@@ -110,45 +110,48 @@ export function PlanPicker({
   const clinicId = activeClinic?.id;
   const currentIsAnnual = currentPlanCode ? ANNUAL_CODES.includes(currentPlanCode) : false;
   const [interval, setBillingInterval] = useState<Interval>(currentIsAnnual ? "annual" : "monthly");
+  // What the clinic pays with no code: the standard price, or its launch price
+  // if it already has one. The cards always show this.
   const [quotes, setQuotes] = useState<Record<string, CheckoutQuote>>({});
-  const [offer, setOffer] = useState<FoundingOffer | null>(null);
+  // The server's prices with a code that applied, used only inside checkout.
+  const [couponQuotes, setCouponQuotes] = useState<Record<string, CheckoutQuote> | null>(null);
   const [coupon, setCoupon] = useState<CouponState>({ applied: null, feedback: null });
   const [checkingCoupon, setCheckingCoupon] = useState(false);
   const [reviewCode, setReviewCode] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
-  const loadQuotes = useCallback(
-    async (code: string | null) => {
-      if (!clinicId) return null;
-      const result = await getCheckoutQuotes(clinicId, code);
-      setQuotes(Object.fromEntries(result.quotes.map((q) => [q.plan_code, q])));
-      setOffer(result.offer);
-      return result;
-    },
-    [clinicId],
-  );
+  const loadQuotes = useCallback(async () => {
+    if (!clinicId) return;
+    const result = await getCheckoutQuotes(clinicId);
+    setQuotes(Object.fromEntries(result.quotes.map((q) => [q.plan_code, q])));
+    setLoadError(false);
+  }, [clinicId]);
 
   useEffect(() => {
-    loadQuotes(null).catch(() => {});
+    loadQuotes().catch(() => {});
   }, [loadQuotes]);
 
   const applyCoupon = async (code: string) => {
+    if (!clinicId) return;
     setCheckingCoupon(true);
+    setCouponQuotes(null);
     try {
-      const result = await loadQuotes(code);
-      const first = result?.quotes[0];
+      const result = await getCheckoutQuotes(clinicId, code);
+      const first = result.quotes[0];
       if (!first) throw new Error("no quote");
-      setCoupon(
-        first.coupon_status === "applied"
-          ? { applied: first.coupon_code, feedback: { tone: "ok", text: "Launch code applied." } }
-          : {
-              applied: null,
-              feedback: {
-                // A clinic that already has launch pricing has lost nothing.
-                tone: first.price_tier === "launch" ? "ok" : "bad",
-                text: first.coupon_message ?? "That code can't be used.",
-              },
-            },
-      );
+      if (first.coupon_status === "applied") {
+        setCouponQuotes(Object.fromEntries(result.quotes.map((q) => [q.plan_code, q])));
+        setCoupon({ applied: first.coupon_code, feedback: null });
+      } else {
+        setCoupon({
+          applied: null,
+          feedback: {
+            // A clinic that already has launch pricing has lost nothing.
+            tone: first.price_tier === "launch" ? "ok" : "bad",
+            text: first.coupon_message ?? "That code can't be used.",
+          },
+        });
+      }
     } catch {
       setCoupon({ applied: null, feedback: { tone: "bad", text: "Couldn't check that code. Please try again." } });
     } finally {
@@ -156,25 +159,27 @@ export function PlanPicker({
     }
   };
 
+  const removeCoupon = () => {
+    setCouponQuotes(null);
+    setCoupon({ applied: null, feedback: null });
+  };
+
   // A plan can only be reviewed with the server's price in hand.
   const reviewPlan = async (code: string) => {
     if (!quotes[code]) {
       try {
-        await loadQuotes(coupon.applied);
+        await loadQuotes();
       } catch {
-        setCoupon((prev) => ({
-          ...prev,
-          feedback: { tone: "bad", text: "Couldn't load prices. Check your connection and try again." },
-        }));
+        setLoadError(true);
         return;
       }
     }
     setReviewCode(code);
   };
 
-  const removeCoupon = () => {
-    setCoupon({ applied: null, feedback: null });
-    loadQuotes(null).catch(() => {});
+  const closeReview = () => {
+    setReviewCode(null);
+    removeCoupon();
   };
 
   const annual = interval === "annual";
@@ -197,8 +202,6 @@ export function PlanPicker({
     return { label: `Switch to ${tier}${suffix}`, disabled: false };
   };
 
-  const hasLaunchPricing = Object.values(quotes).some((q) => q.price_tier === "launch");
-
   const cardProps = (code: string) => ({
     code,
     quote: quotes[code] ?? null,
@@ -212,22 +215,17 @@ export function PlanPicker({
   });
 
   const gstRate = Object.values(quotes)[0]?.gst_rate_bps ?? 0;
-  const reviewing = reviewCode ? quotes[reviewCode] ?? null : null;
+  const reviewing = reviewCode ? couponQuotes?.[reviewCode] ?? quotes[reviewCode] ?? null : null;
 
   return (
     <div>
-      {offer?.available && <FoundingBanner offer={offer} />}
+      <BillingToggle value={interval} onChange={setBillingInterval} />
 
-      <BillingToggle value={interval} onChange={setBillingInterval} offerAvailable={Boolean(offer?.available)} />
-
-      <CouponField
-        applied={coupon.applied}
-        feedback={coupon.feedback}
-        checking={checkingCoupon}
-        hidden={hasLaunchPricing && !coupon.applied && !coupon.feedback}
-        onApply={applyCoupon}
-        onRemove={removeCoupon}
-      />
+      {loadError && (
+        <p role="alert" className="mt-4 text-center text-[12.5px] font-semibold text-[var(--color-danger-text)]">
+          Couldn't load prices. Check your connection and try again.
+        </p>
+      )}
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <CorePlanCard {...cardProps(coreCode)} />
@@ -256,15 +254,20 @@ export function PlanPicker({
 
       <CheckoutSummary
         quote={reviewing}
-        offer={offer}
+        coupon={coupon}
+        checkingCoupon={checkingCoupon}
+        hasLaunchPricing={Boolean(reviewCode && quotes[reviewCode]?.price_tier === "launch")}
+        onApplyCoupon={applyCoupon}
+        onRemoveCoupon={removeCoupon}
         recurring={Boolean(reviewCode) && checkoutRouteFor(reviewCode ?? "", recurringMonthly) === "recurring"}
         trialActive={trialActive}
         paidThrough={paidThrough}
-        onClose={() => setReviewCode(null)}
+        onClose={closeReview}
         onConfirm={() => {
           if (!reviewCode) return;
-          setReviewCode(null);
-          onSelect(reviewCode, coupon.applied);
+          const code = coupon.applied;
+          closeReview();
+          onSelect(reviewCode, code);
         }}
       />
     </div>
@@ -301,7 +304,7 @@ function CouponField({
   };
 
   return (
-    <div className="mx-auto mt-5 max-w-md">
+    <div className="mb-4">
       {applied ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-mint-text)]/25 bg-[var(--color-mint-bg)] px-3.5 py-2.5 text-[13px]">
           <span className="inline-flex min-w-0 items-center gap-2 font-bold text-[var(--color-mint-text)]">
@@ -330,8 +333,8 @@ function CouponField({
             <input
               value={value}
               onChange={(event) => setValue(event.target.value)}
-              placeholder="Launch code, e.g. NEWUSER50"
-              aria-label="Launch code"
+              placeholder="Coupon code"
+              aria-label="Coupon code"
               maxLength={64}
               autoCapitalize="characters"
               autoComplete="off"
@@ -359,22 +362,6 @@ function CouponField({
   );
 }
 
-function FoundingBanner({ offer }: { offer: FoundingOffer }) {
-  return (
-    <div className="mb-5 rounded-xl border border-[var(--color-teal)]/25 bg-[var(--color-teal)]/[0.07] px-4 py-3 text-center">
-      <p className="text-[11px] font-extrabold tracking-[0.1em] text-[var(--color-teal)] uppercase">
-        Founding Clinic Offer
-      </p>
-      <p className="mt-1 text-[13.5px] font-semibold text-[var(--color-ink)]">
-        Get {offer.bonus_months} additional months FREE on annual plans.
-      </p>
-      <p className="mt-0.5 text-[12.5px] text-[var(--color-muted)]">
-        Available for the first {offer.slot_limit} clinics · {offer.remaining} left
-      </p>
-    </div>
-  );
-}
-
 /* --------------------------------------------------------------- summary -- */
 
 function SummaryRow({ label, value, strong = false, accent = false }: { label: string; value: string; strong?: boolean; accent?: boolean }) {
@@ -395,7 +382,11 @@ function SummaryRow({ label, value, strong = false, accent = false }: { label: s
 
 function CheckoutSummary({
   quote,
-  offer,
+  coupon,
+  checkingCoupon,
+  hasLaunchPricing,
+  onApplyCoupon,
+  onRemoveCoupon,
   recurring,
   trialActive,
   paidThrough,
@@ -403,7 +394,11 @@ function CheckoutSummary({
   onConfirm,
 }: {
   quote: CheckoutQuote | null;
-  offer: FoundingOffer | null;
+  coupon: CouponState;
+  checkingCoupon: boolean;
+  hasLaunchPricing: boolean;
+  onApplyCoupon: (code: string) => void;
+  onRemoveCoupon: () => void;
   recurring: boolean;
   trialActive: boolean;
   paidThrough: string | null;
@@ -420,13 +415,24 @@ function CheckoutSummary({
 
   return (
     <Modal open onClose={onClose} title={`Healvo ${tier} · ${annual ? "Annual" : "Monthly"}`} className="max-w-md">
+      <CouponField
+        applied={coupon.applied}
+        feedback={coupon.feedback}
+        checking={checkingCoupon}
+        hidden={hasLaunchPricing}
+        onApply={onApplyCoupon}
+        onRemove={onRemoveCoupon}
+      />
+
       <dl className="space-y-2.5">
         <SummaryRow label="Standard price" value={formatExactINR(quote.reference_paise)} />
-        <SummaryRow
-          label={quote.discount_paise > 0 ? (quote.coupon_code ? `With code ${quote.coupon_code}` : "Launch pricing") : "Launch code"}
-          value={quote.discount_paise > 0 ? `− ${formatExactINR(quote.discount_paise)}` : "Not applied"}
-          accent={quote.discount_paise > 0}
-        />
+        {quote.discount_paise > 0 && (
+          <SummaryRow
+            label={quote.coupon_code ? `Coupon ${quote.coupon_code}` : "Launch pricing"}
+            value={`− ${formatExactINR(quote.discount_paise)}`}
+            accent
+          />
+        )}
         <SummaryRow
           label={quote.gst_rate_bps > 0 ? `GST (${quote.gst_rate_bps / 100}%)` : "GST"}
           value={quote.gst_rate_bps > 0 ? formatExactINR(quote.gst_paise) : "Not charged"}
@@ -436,30 +442,13 @@ function CheckoutSummary({
         </div>
       </dl>
 
-      {annual && (
-        <p className="mt-4 rounded-lg bg-[var(--color-mint-bg)] px-3 py-2.5 text-[13px] font-semibold text-[var(--color-mint-text)]">
-          {quote.bonus_months > 0
-            ? `${quote.paid_months} months paid + ${quote.bonus_months} months FREE = ${quote.access_months} months access.`
-            : `${quote.access_months} months access.`}
-        </p>
-      )}
-
       <ul className="mt-3 space-y-1.5 text-[12.5px] leading-relaxed text-[var(--color-muted)]">
-        {annual && quote.bonus_months > 0 && offer && (
-          <li>
-            The free months are reserved when your payment succeeds, for the first {offer.slot_limit} clinics.{" "}
-            {offer.remaining} left right now.
-          </li>
-        )}
         {annual ? (
-          <li>One payment. It doesn't renew by itself.</li>
+          <li>One payment for 12 months. It doesn't renew by itself.</li>
         ) : recurring ? (
           <li>Renews automatically at {payable} a month until you stop it.</li>
         ) : (
           <li>Covers one month. It doesn't renew by itself.</li>
-        )}
-        {quote.price_basis === "list" && (
-          <li>Have a launch code? Close this and apply it first: you can't add one after paying.</li>
         )}
         {trialActive && <li>Paying now ends your free trial today, and your paid plan starts straight away.</li>}
         {paidThrough && !chargesLater && <li>This starts after your current plan ends on {paidThrough}.</li>}
@@ -480,15 +469,7 @@ function CheckoutSummary({
 
 /* ---------------------------------------------------------------- toggle -- */
 
-function BillingToggle({
-  value,
-  onChange,
-  offerAvailable,
-}: {
-  value: Interval;
-  onChange: (v: Interval) => void;
-  offerAvailable: boolean;
-}) {
+function BillingToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
   const annual = value === "annual";
   return (
     <div className="flex flex-col items-center gap-3">
@@ -523,41 +504,7 @@ function BillingToggle({
         ))}
       </div>
 
-      <div className="flex min-h-[24px] items-center gap-2 text-[12.5px]">
-        {!offerAvailable ? (
-          <span className="text-[var(--color-muted)]">Monthly or yearly, same features.</span>
-        ) : annual ? (
-          <span key="annual" className="plan-fade-in inline-flex items-center gap-2">
-            <FreeMonthsBadge />
-            <span className="font-semibold text-[var(--color-ink)]">Pay for 12 months, get 14 months</span>
-          </span>
-        ) : (
-          <button
-            key="monthly"
-            type="button"
-            onClick={() => onChange("annual")}
-            className="plan-fade-in cursor-pointer text-[var(--color-muted)] transition-colors hover:text-[var(--color-teal)]"
-          >
-            Go annual and get <span className="font-bold text-[var(--color-teal)]">2 months free</span>
-          </button>
-        )}
-      </div>
     </div>
-  );
-}
-
-function FreeMonthsBadge({ onDark = false }: { onDark?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md px-2 py-[3px] text-[10.5px] font-extrabold tracking-[0.08em] uppercase",
-        onDark
-          ? "bg-[#2dd4bf]/15 text-[#5eead4] ring-1 ring-[#2dd4bf]/30 ring-inset"
-          : "bg-[var(--color-mint-bg)] text-[var(--color-mint-text)] ring-1 ring-[var(--color-mint-text)]/20 ring-inset",
-      )}
-    >
-      2 months free
-    </span>
   );
 }
 
@@ -588,19 +535,13 @@ function PriceBlock({
   recurring: boolean;
   onDark: boolean;
 }) {
-  const fallback = DEFAULT_PRICES[code];
-  const reference = quote?.reference_paise ?? fallback.reference;
-  const launch = quote?.launch_paise ?? fallback.launch;
-  const discounted = quote?.price_tier === "launch";
-  const price = discounted ? launch : reference;
-  const bonus = quote?.bonus_months ?? 0;
+  const standard = quote?.reference_paise ?? DEFAULT_PRICES[code];
+  // Only a clinic that already has launch pricing sees anything else here.
+  const price = quote?.payable_paise ?? standard;
 
   return (
-    <div key={`${code}-${price}-${bonus}`} className="plan-fade-in mt-5">
-      <p className={cn("min-h-[20px] text-[12.5px] font-semibold tabular-nums", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
-        {discounted && `Standard price ${formatPriceINR(reference)}`}
-      </p>
-      <div className="mt-1 flex items-baseline gap-1.5">
+    <div key={`${code}-${price}`} className="plan-fade-in mt-5">
+      <div className="flex items-baseline gap-1.5">
         <span
           className={cn(
             "text-[38px] leading-none font-extrabold tracking-[-0.035em] tabular-nums",
@@ -609,31 +550,13 @@ function PriceBlock({
         >
           {formatPriceINR(price)}
         </span>
-        {!annual && (
-          <span className={cn("text-[14px] font-semibold", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
-            / month
-          </span>
-        )}
+        <span className={cn("text-[14px] font-semibold", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
+          / {annual ? "year" : "month"}
+        </span>
       </div>
-      {!discounted && (
-        <p className={cn("mt-1.5 text-[12.5px] font-semibold", onDark ? "text-[#5eead4]" : "text-[var(--color-teal)]")}>
-          {formatPriceINR(launch)} with a launch code
-        </p>
-      )}
-      <div className="mt-2.5 flex min-h-[22px] flex-wrap items-center gap-2">
-        {annual && bonus > 0 ? (
-          <>
-            <FreeMonthsBadge onDark={onDark} />
-            <span className={cn("text-[12.5px] font-semibold", onDark ? "text-white/80" : "text-[var(--color-ink)]")}>
-              Pay for 12 months, get {12 + bonus} months
-            </span>
-          </>
-        ) : (
-          <span className={cn("text-[12.5px]", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
-            {annual ? "12 months access" : recurring ? "Billed monthly" : "Pay each month. No auto-renewal."}
-          </span>
-        )}
-      </div>
+      <p className={cn("mt-2.5 min-h-[22px] text-[12.5px]", onDark ? "text-white/55" : "text-[var(--color-muted)]")}>
+        {annual ? "12 months access" : recurring ? "Billed monthly" : "Pay each month. No auto-renewal."}
+      </p>
     </div>
   );
 }

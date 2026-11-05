@@ -25,7 +25,7 @@ import { trackPurchase } from "../lib/metaPixel";
 export type CheckoutPhase = "idle" | "starting" | "paying" | "confirming" | "cancelling";
 
 export type CheckoutOutcome =
-  | { kind: "success"; invoiceNumber: string | null; accessEndsAt: string | null; offerMissed?: boolean }
+  | { kind: "success"; invoiceNumber: string | null; accessEndsAt: string | null }
   | { kind: "autorenew_on"; firstChargeAt: string | null }
   | { kind: "autorenew_off"; accessUntil: string | null }
   | { kind: "pending"; paymentId: string }
@@ -105,7 +105,6 @@ export function useSubscriptionCheckout() {
               kind: "success",
               invoiceNumber: result.invoice_number ?? null,
               accessEndsAt: result.current_period_ends_at ?? null,
-              offerMissed: result.offer_status === "sold_out",
             });
             return;
           } catch {
@@ -233,14 +232,13 @@ export function useSubscriptionCheckout() {
             throw new Error("Couldn't open checkout. Check your internet connection and try again.");
           }
           checkoutValueRef.current = checkout.amount;
-          const months = checkout.entitlementMonths;
           options = {
             key: checkout.keyId,
             amount: checkout.amount,
             currency: checkout.currency,
             order_id: checkout.orderId,
             name: "Healvo",
-            description: `${planDisplayName(checkout.interval)} plan · ${months} month${months === 1 ? "" : "s"} access`,
+            description: `${planDisplayName(checkout.interval)} plan`,
             prefill: { email: userEmail },
             theme: { color: BRAND_COLOR },
             modal,
