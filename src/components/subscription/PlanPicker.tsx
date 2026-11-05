@@ -433,10 +433,9 @@ function CheckoutSummary({
             accent
           />
         )}
-        <SummaryRow
-          label={quote.gst_rate_bps > 0 ? `GST (${quote.gst_rate_bps / 100}%)` : "GST"}
-          value={quote.gst_rate_bps > 0 ? formatExactINR(quote.gst_paise) : "Not charged"}
-        />
+        {quote.gst_rate_bps > 0 && (
+          <SummaryRow label={`GST (${quote.gst_rate_bps / 100}%)`} value={formatExactINR(quote.gst_paise)} />
+        )}
         <div className="border-t border-[var(--color-border)] pt-2.5">
           <SummaryRow label={chargesLater ? `Due on ${paidThrough}` : "Payable now"} value={payable} strong />
         </div>
