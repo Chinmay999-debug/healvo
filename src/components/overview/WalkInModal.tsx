@@ -8,8 +8,8 @@ import { Search } from "../ui/Search";
 import { PhoneInput } from "../ui/PhoneInput";
 import { inputClass } from "../ui/fieldStyles";
 import { useClinicData } from "../../state/clinicData";
-import { VISIT_REASONS, type Patient } from "../../data/mockData";
-import { cn, fullDateLabel, initials, getErrorMessage } from "../../lib/utils";
+import { type Patient } from "../../data/mockData";
+import { fullDateLabel, initials, getErrorMessage } from "../../lib/utils";
 import { formatPhoneDisplay, isValidIndianMobile } from "../../lib/phone";
 
 type Step = "search" | "new-patient" | "visit" | "confirm" | "success";
@@ -37,8 +37,6 @@ export function WalkInModal({
   const [query, setQuery] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [draft, setDraft] = useState<NewPatientDraft>(emptyDraft);
-  const [reason, setReason] = useState<string | null>(null);
-  const [customReason, setCustomReason] = useState("");
   const [registeredName, setRegisteredName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +48,6 @@ export function WalkInModal({
     setQuery("");
     setSelectedPatient(null);
     setDraft(emptyDraft);
-    setReason(null);
-    setCustomReason("");
     setRegisteredName("");
     setError(null);
   }
@@ -73,7 +69,9 @@ export function WalkInModal({
   }
 
   async function confirmWalkIn() {
-    const finalReason = reason === "Other" ? customReason.trim() : (reason ?? "");
+    // visits.reason is NOT NULL and shown wherever a visit is listed, so a
+    // walk-in records a neutral label instead of a staff-picked reason.
+    const finalReason = "Walk-in";
     setSubmitting(true);
     setError(null);
     try {
@@ -266,37 +264,6 @@ export function WalkInModal({
             </button>
           </div>
 
-          <h3 className="mt-4 text-[14px] font-bold text-[var(--color-ink)]">
-            Reason for visit
-          </h3>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {VISIT_REASONS.map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setReason(r)}
-                className={cn(
-                  "rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-                  reason === r
-                    ? "border-transparent bg-[var(--color-ink-solid)] text-[var(--color-ink-solid-text)]"
-                    : "border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-ink)] hover:bg-[var(--color-canvas)]",
-                )}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-
-          {reason === "Other" && (
-            <input
-              autoFocus
-              value={customReason}
-              onChange={(e) => setCustomReason(e.target.value)}
-              placeholder="Describe the reason"
-              className={cn(inputClass, "mt-3")}
-            />
-          )}
-
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="ghost" onClick={handleClose}>
               Cancel
@@ -304,7 +271,6 @@ export function WalkInModal({
             <Button
               variant="primary"
               onClick={() => setStep("confirm")}
-              disabled={!reason || (reason === "Other" && !customReason.trim())}
             >
               Continue
             </Button>
@@ -318,10 +284,6 @@ export function WalkInModal({
 
           <div className="mt-3 divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)]">
             <SummaryRow label="Patient" value={patientName} />
-            <SummaryRow
-              label="Visit"
-              value={reason === "Other" ? customReason.trim() : (reason ?? "")}
-            />
             <SummaryRow label="Type" value="Walk-in" />
             <SummaryRow label="Today" value={fullDateLabel(new Date())} />
           </div>
