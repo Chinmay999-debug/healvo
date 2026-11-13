@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { CalendarCheck, CheckCircle2, Phone } from "lucide-react";
+import { CalendarCheck, CalendarDays, CheckCircle2, Phone } from "lucide-react";
 import { Logo } from "../components/ui/Logo";
 import { PhoneInput } from "../components/ui/PhoneInput";
 import { VISIT_REASONS } from "../data/mockData";
@@ -23,6 +23,7 @@ import {
 } from "../lib/utils";
 import { formatPhoneDisplay, isValidIndianMobile } from "../lib/phone";
 import { Checkbox } from "../components/ui/Checkbox";
+import { BookingCalendar } from "../components/booking/BookingCalendar";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-[14px] text-[var(--color-ink)] outline-none focus:border-[var(--color-teal)] focus:ring-2 focus:ring-[var(--color-teal)]/15";
@@ -31,6 +32,14 @@ interface DateOption {
   iso: string;
   label: string;
 }
+
+// Quick-pick buttons show the first few bookable dates; the custom-date
+// calendar offers every bookable date the server returns. Both come from the
+// same public_booking_get_dates call, which scans the clinic's booking window
+// (today .. today + BOOKING_WINDOW_DAYS, enforced server-side as well).
+const QUICK_DATE_COUNT = 6;
+const BOOKING_WINDOW_DAYS = 180;
+const CALENDAR_DATE_LIMIT = BOOKING_WINDOW_DAYS + 1;
 
 // "Today"/"Tomorrow" by real date difference, not array position — the
 // dates array returned by the server may skip a day with zero availability.
@@ -50,8 +59,9 @@ export default function BookAppointment() {
   const [info, setInfo] = useState<PublicClinicInfo | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
 
-  const [dateOptions, setDateOptions] = useState<DateOption[]>([]);
+  const [bookableDates, setBookableDates] = useState<string[]>([]);
   const [datesLoading, setDatesLoading] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const [slots, setSlots] = useState<PublicSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -98,13 +108,12 @@ export default function BookAppointment() {
     if (!slug || !info || !info.onlineBookingEnabled) return;
     let cancelled = false;
     setDatesLoading(true);
-    getPublicAvailableDates(slug)
+    getPublicAvailableDates(slug, CALENDAR_DATE_LIMIT)
       .then((isoDates) => {
-        if (cancelled) return;
-        setDateOptions(isoDates.map((iso) => ({ iso, label: labelForDate(iso) })));
+        if (!cancelled) setBookableDates(isoDates);
       })
       .catch(() => {
-        if (!cancelled) setDateOptions([]);
+        if (!cancelled) setBookableDates([]);
       })
       .finally(() => {
         if (!cancelled) setDatesLoading(false);
@@ -140,9 +149,19 @@ export default function BookAppointment() {
   const detailsReady = name.trim().length > 1 && isValidIndianMobile(phone);
   const canConfirm = reasonReady && date && time && detailsReady;
 
+  const dateOptions = useMemo<DateOption[]>(
+    () =>
+      bookableDates
+        .slice(0, QUICK_DATE_COUNT)
+        .map((iso) => ({ iso, label: labelForDate(iso) })),
+    [bookableDates],
+  );
+  const customDateSelected = date !== null && !dateOptions.some((d) => d.iso === date);
+
   function selectDate(iso: string) {
     setDate(iso);
     setTime(null);
+    setCalendarOpen(false);
   }
 
   async function handleConfirm() {
@@ -262,7 +281,7 @@ export default function BookAppointment() {
                     <Section heading="Choose a date">
                       {datesLoading ? (
                         <p className="text-[13px] text-[var(--color-muted)]">Loading dates…</p>
-                      ) : dateOptions.length === 0 ? (
+                      ) : bookableDates.length === 0 ? (
                         <p className="text-[13px] text-[var(--color-muted)]">
                           No upcoming availability. Please call the clinic directly.
                         </p>
@@ -283,6 +302,33 @@ export default function BookAppointment() {
                               {d.label}
                             </button>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => setCalendarOpen((open) => !open)}
+                            aria-expanded={calendarOpen}
+                            className={cn(
+                              "flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-[13.5px] font-semibold transition-colors",
+                              customDateSelected
+                                ? "border-transparent bg-[var(--color-teal)] text-white"
+                                : "border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-teal)] hover:bg-[var(--color-canvas)]",
+                            )}
+                          >
+                            <CalendarDays size={15} />
+                            {customDateSelected && date
+                              ? shortWeekdayDateLabel(dateFromISO(date))
+                              : "Choose custom date"}
+                          </button>
+                        </div>
+                      )}
+                      {calendarOpen && bookableDates.length > 0 && (
+                        <div className="mt-3">
+                          <BookingCalendar
+                            bookableDates={bookableDates}
+                            selected={date}
+                            today={todayISO()}
+                            windowDays={BOOKING_WINDOW_DAYS}
+                            onSelect={selectDate}
+                          />
                         </div>
                       )}
                     </Section>
@@ -292,6 +338,10 @@ export default function BookAppointment() {
                     <Section heading="Choose a time">
                       {slotsLoading ? (
                         <p className="text-[13px] text-[var(--color-muted)]">Loading times…</p>
+                      ) : slots.length === 0 ? (
+                        <p className="text-[13px] text-[var(--color-muted)]">
+                          No times are left on this date. Please choose another date.
+                        </p>
                       ) : (
                         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                           {slots.map((s) => (
