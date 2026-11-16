@@ -42,8 +42,48 @@ export async function signUpWithPassword(
     password,
     options: metadata && Object.keys(metadata).length > 0 ? { data: metadata } : undefined,
   });
-  if (error) throw error;
+  if (error) {
+    if (isDuplicateEmailAuthError(error)) throw new EmailAlreadyRegisteredError();
+    throw error;
+  }
+  if (isObfuscatedExistingUser(data.user, data.session)) throw new EmailAlreadyRegisteredError();
   return { session: data.session, user: data.user };
+}
+
+/** Thrown by signUpWithPassword when the address already has an account. */
+export class EmailAlreadyRegisteredError extends Error {
+  constructor() {
+    super("An account with this email already exists. Please log in instead.");
+    this.name = "EmailAlreadyRegisteredError";
+  }
+}
+
+export function isEmailAlreadyRegisteredError(err: unknown): err is EmailAlreadyRegisteredError {
+  return err instanceof EmailAlreadyRegisteredError;
+}
+
+/** With email confirmation OFF, Supabase rejects a taken address outright. */
+function isDuplicateEmailAuthError(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "user_already_exists" ||
+    error.code === "email_exists" ||
+    /user already registered/i.test(error.message ?? "")
+  );
+}
+
+/**
+ * With email confirmation ON (production), Supabase answers sign-up for an
+ * already-confirmed address with a success-shaped placeholder: no session and
+ * a user whose `identities` array is empty, and it sends no email. A genuinely
+ * new sign-up always carries its new email identity, and an existing but
+ * still-unconfirmed address gets its real user back (and a fresh confirmation
+ * email), so only the empty-identities case means "already registered".
+ *
+ * This reads only what Supabase's own sign-up response already returns to any
+ * caller; it adds no lookup endpoint of our own.
+ */
+function isObfuscatedExistingUser(user: User | null, session: Session | null): boolean {
+  return !session && !!user && Array.isArray(user.identities) && user.identities.length === 0;
 }
 
 /** Kicks off Supabase's redirect-based Google OAuth flow. Supabase navigates

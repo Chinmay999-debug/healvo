@@ -13,6 +13,7 @@ import {
   fieldLabelClass,
 } from "./authLayout";
 import { useAuth } from "../../state/authContext";
+import { isEmailAlreadyRegisteredError } from "../../services/auth";
 import { getErrorMessage } from "../../lib/utils";
 import { MIN_PASSWORD_LENGTH } from "../../lib/passwordPolicy";
 import {
@@ -43,12 +44,26 @@ export function AuthScreen({
   onAccountCreated?: (name: string) => void;
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
+  // Carries the address from "already exists → Log in" into the login form.
+  const [loginEmail, setLoginEmail] = useState("");
 
   return (
     <AuthShell>
-      {mode === "login" && <LoginForm onForgot={() => setMode("forgot")} onSignUp={() => setMode("signup")} />}
+      {mode === "login" && (
+        <LoginForm
+          initialEmail={loginEmail}
+          onForgot={() => setMode("forgot")}
+          onSignUp={() => setMode("signup")}
+        />
+      )}
       {mode === "signup" && (
-        <SignUpForm onLogin={() => setMode("login")} onAccountCreated={onAccountCreated} />
+        <SignUpForm
+          onLogin={(email) => {
+            setLoginEmail(email ?? "");
+            setMode("login");
+          }}
+          onAccountCreated={onAccountCreated}
+        />
       )}
       {mode === "forgot" && <ForgotPasswordForm onBack={() => setMode("login")} />}
     </AuthShell>
@@ -71,9 +86,17 @@ function SwitchModeFooter({ children }: { children: ReactNode }) {
   return <p className="mt-6 text-center text-[13px] text-[var(--color-muted)]">{children}</p>;
 }
 
-function LoginForm({ onForgot, onSignUp }: { onForgot: () => void; onSignUp: () => void }) {
+function LoginForm({
+  initialEmail = "",
+  onForgot,
+  onSignUp,
+}: {
+  initialEmail?: string;
+  onForgot: () => void;
+  onSignUp: () => void;
+}) {
   const { signIn } = useAuth();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,11 +172,29 @@ function LoginForm({ onForgot, onSignUp }: { onForgot: () => void; onSignUp: () 
   );
 }
 
+/** Shown under the sign-up email field when that address already has an
+ * account. Same styling as authLayout's FieldError, plus a way to log in. */
+export function DuplicateEmailNotice({ onLogin }: { onLogin: () => void }) {
+  return (
+    <p
+      id="signup-email-error"
+      role="alert"
+      className="mt-1.5 text-[12px] font-semibold text-[var(--color-danger-text)]"
+    >
+      An account with this email already exists. Please{" "}
+      <button type="button" onClick={onLogin} className="font-semibold text-[var(--color-teal)] underline">
+        log in
+      </button>{" "}
+      instead.
+    </p>
+  );
+}
+
 function SignUpForm({
   onLogin,
   onAccountCreated,
 }: {
-  onLogin: () => void;
+  onLogin: (email?: string) => void;
   onAccountCreated?: (name: string) => void;
 }) {
   const { signUp } = useAuth();
@@ -162,6 +203,7 @@ function SignUpForm({
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailTaken, setEmailTaken] = useState(false);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [referralCode, setReferralCode] = useState<string | null>(() => getStoredReferral()?.code ?? null);
 
@@ -180,6 +222,7 @@ function SignUpForm({
     if (submitting) return;
     setSubmitting(true);
     setError(null);
+    setEmailTaken(false);
     try {
       void markReferralSignupStarted();
       // The display name goes into Auth user metadata so the profile starts
@@ -194,7 +237,8 @@ function SignUpForm({
         onAccountCreated?.(name.trim());
       }
     } catch (err) {
-      setError(getErrorMessage(err, "Could not create your account."));
+      if (isEmailAlreadyRegisteredError(err)) setEmailTaken(true);
+      else setError(getErrorMessage(err, "Could not create your account."));
     } finally {
       setSubmitting(false);
     }
@@ -209,7 +253,7 @@ function SignUpForm({
           We&apos;ve sent a confirmation link to <span className="font-semibold text-[var(--color-ink)]">{email}</span>.
           Click it, then log in to finish setting up your clinic.
         </p>
-        <Button variant="outline" className="mt-6 w-full justify-center py-2.5" onClick={onLogin}>
+        <Button variant="outline" className="mt-6 w-full justify-center py-2.5" onClick={() => onLogin()}>
           Back to log in
         </Button>
       </div>
@@ -242,18 +286,26 @@ function SignUpForm({
             className={fieldInputClass}
           />
         </label>
-        <label className="block">
-          <span className={fieldLabelClass}>Email</span>
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@yourclinic.com"
-            className={fieldInputClass}
-          />
-        </label>
+        <div>
+          <label className="block">
+            <span className={fieldLabelClass}>Email</span>
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setEmailTaken(false);
+              }}
+              placeholder="you@yourclinic.com"
+              aria-invalid={emailTaken || undefined}
+              aria-describedby={emailTaken ? "signup-email-error" : undefined}
+              className={fieldInputClass}
+            />
+          </label>
+          {emailTaken && <DuplicateEmailNotice onLogin={() => onLogin(email.trim())} />}
+        </div>
         <label className="block">
           <span className={fieldLabelClass}>Password</span>
           <PasswordField
@@ -279,7 +331,7 @@ function SignUpForm({
 
       <SwitchModeFooter>
         Already have an account?{" "}
-        <button type="button" onClick={onLogin} className="font-semibold text-[var(--color-teal)] hover:underline">
+        <button type="button" onClick={() => onLogin()} className="font-semibold text-[var(--color-teal)] hover:underline">
           Log in
         </button>
       </SwitchModeFooter>
